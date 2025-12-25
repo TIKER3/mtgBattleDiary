@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MTG Battle Diary: Sideboard Update</title>
+    <title>MTG Battle Diary: Editable History</title>
     
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -19,9 +19,7 @@
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
-        .card-count-badge {
-            text-shadow: 0px 1px 2px rgba(0,0,0,0.8);
-        }
+        .card-count-badge { text-shadow: 0px 1px 2px rgba(0,0,0,0.8); }
     </style>
 </head>
 <body class="bg-slate-100 text-slate-800 font-sans pb-40">
@@ -36,7 +34,7 @@
             return <i data-lucide={name} width={size} height={size} className={className}></i>;
         };
 
-        // --- Helper: Parse Decklist (Simple Map for Diff) ---
+        // --- Helper: Parse & Image Logic ---
         const parseDeckListForDiff = (text) => {
             if (!text) return {};
             const lines = text.split('\n');
@@ -51,9 +49,7 @@
             return deck;
         };
 
-        // --- Helper: Parse and Split Main/Side (Bottom 15 Rule) ---
         const fetchImagesSplitMainSide = async (deckListText) => {
-            // 1. 行ごとの生データを取得（順番保持）
             const lines = deckListText.split('\n').filter(l => l.trim() !== "");
             let rawCards = [];
             lines.forEach(line => {
@@ -65,22 +61,18 @@
                 }
             });
 
-            // 2. 下から数えて15枚をサイドボードとして分離
             let currentSideCount = 0;
             let sideList = [];
             let mainList = [];
             
-            // 後ろからループ
             for (let i = rawCards.length - 1; i >= 0; i--) {
                 const card = rawCards[i];
                 if (currentSideCount < 15) {
                     const spaceInSide = 15 - currentSideCount;
                     if (card.count <= spaceInSide) {
-                        // 丸ごとサイドへ
                         sideList.unshift(card);
                         currentSideCount += card.count;
                     } else {
-                        // 分割が必要な場合 (例: 4枚中2枚がサイド、2枚がメイン)
                         const toSide = spaceInSide;
                         const toMain = card.count - spaceInSide;
                         sideList.unshift({ name: card.name, count: toSide });
@@ -88,38 +80,27 @@
                         currentSideCount += toSide;
                     }
                 } else {
-                    // 残りは全てメイン
                     mainList.unshift(card);
                 }
             }
 
-            // 3. 画像URL取得 (ユニークなカード名だけAPIを叩く)
             const uniqueNames = [...new Set([...mainList, ...sideList].map(c => c.name))];
             const urlMap = {};
-
             const promises = uniqueNames.map(async (cardName) => {
                 try {
                     const res = await fetch(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(cardName)}`);
                     if (!res.ok) return;
                     const data = await res.json();
                     urlMap[cardName] = data.image_uris?.small || data.card_faces?.[0]?.image_uris?.small;
-                } catch { 
-                    urlMap[cardName] = null; 
-                }
+                } catch { urlMap[cardName] = null; }
             });
             await Promise.all(promises);
 
-            // 4. URLを付与して返却
             const attachUrl = (list) => list.map(c => ({ ...c, url: urlMap[c.name] })).filter(c => c.url);
-            
-            return {
-                main: attachUrl(mainList),
-                side: attachUrl(sideList)
-            };
+            return { main: attachUrl(mainList), side: attachUrl(sideList) };
         };
 
-
-        // --- Helper: Data Structures ---
+        // --- Data Structures ---
         const createGamesBlock = () => [
             { id: 1, result: null, onPlay: null, memo: '' },
             { id: 2, result: null, onPlay: null, memo: '' },
@@ -148,17 +129,17 @@
             };
 
             const [formData, setFormData] = useState(initialForm);
-            const [parsedDeckForDiff, setParsedDeckForDiff] = useState({}); // Diff計算用(Map形式)
+            const [editingId, setEditingId] = useState(null); // 編集中のIDを管理
+            const [parsedDeckForDiff, setParsedDeckForDiff] = useState({});
             
-            // Image State
             const [deckImagesData, setDeckImagesData] = useState({ main: [], side: [] });
             const [deckDiff, setDeckDiff] = useState(null);
             const [isLoadingImages, setIsLoadingImages] = useState(false);
 
-            // Load Data (Version 8)
+            // Load Data (Version 9)
             useEffect(() => {
-                const savedRecords = localStorage.getItem('mtg_records_v8');
-                const savedDecks = localStorage.getItem('mtg_decks_v8');
+                const savedRecords = localStorage.getItem('mtg_records_v9');
+                const savedDecks = localStorage.getItem('mtg_decks_v9');
                 if (savedRecords) setRecords(JSON.parse(savedRecords));
                 if (savedDecks) setDecks(JSON.parse(savedDecks));
                 lucide.createIcons();
@@ -167,8 +148,8 @@
             useEffect(() => { lucide.createIcons(); }, [view, records, deckDiff, formData.matches.length]);
 
             const saveToStorage = (newRecords, newDecks) => {
-                localStorage.setItem('mtg_records_v8', JSON.stringify(newRecords));
-                localStorage.setItem('mtg_decks_v8', JSON.stringify(newDecks));
+                localStorage.setItem('mtg_records_v9', JSON.stringify(newRecords));
+                localStorage.setItem('mtg_decks_v9', JSON.stringify(newDecks));
             };
 
             // Start New Event
@@ -179,21 +160,40 @@
                     deckListText: existingDeckData ? existingDeckData.text : '',
                     date: new Date().toISOString().split('T')[0]
                 });
+                setEditingId(null); // 新規作成モード
                 
                 if (existingDeckData) {
                     const parsed = parseDeckListForDiff(existingDeckData.text);
                     setParsedDeckForDiff(parsed);
-                    setDeckDiff(null);
                 } else {
                     setParsedDeckForDiff({});
-                    setDeckDiff(null);
                 }
-
+                setDeckDiff(null);
                 setDeckImagesData({ main: [], side: [] });
                 setView('new');
             };
 
-            // Deck Text Change -> Calc Diff
+            // Edit Existing Event
+            const startEditEvent = (record) => {
+                // データをコピーしてフォームにセット（参照渡しを防ぐためDeep Copy）
+                setFormData(JSON.parse(JSON.stringify({
+                    date: record.date,
+                    location: record.location,
+                    deckName: record.deckName,
+                    deckListText: record.deckListText,
+                    matches: record.matches
+                })));
+                
+                setEditingId(record.id); // 編集モードIDセット
+                setDeckDiff(record.diffSnapshot); // 保存されていたDiffを復元
+                setParsedDeckForDiff(parseDeckListForDiff(record.deckListText));
+                setDeckImagesData({ main: [], side: [] }); // 画像は重いのでリセット（ボタン押下で再取得）
+                
+                setView('new');
+                // スクロールトップ
+                window.scrollTo(0, 0);
+            };
+
             const handleDeckListChange = (text) => {
                 setFormData(prev => ({ ...prev, deckListText: text }));
                 const currentParsed = parseDeckListForDiff(text);
@@ -201,8 +201,6 @@
 
                 if (formData.deckName && decks[formData.deckName]) {
                     calculateDiff(decks[formData.deckName].parsed, currentParsed);
-                } else {
-                    setDeckDiff(null);
                 }
             };
 
@@ -223,28 +221,16 @@
             const addMatch = () => {
                 setFormData(prev => ({ ...prev, matches: [...prev.matches, createNewMatchBlock(prev.matches.length + 1)] }));
             };
-
-            const updateMatchInfo = (matchIndex, field, value) => {
-                const newMatches = [...formData.matches];
-                newMatches[matchIndex] = { ...newMatches[matchIndex], [field]: value };
-                setFormData({ ...formData, matches: newMatches });
+            const updateMatchInfo = (idx, f, v) => {
+                const nM = [...formData.matches]; nM[idx] = { ...nM[idx], [f]: v }; setFormData({ ...formData, matches: nM });
             };
-
-            const updateGame = (matchIndex, gameIndex, field, value) => {
-                const newMatches = [...formData.matches];
-                const newGames = [...newMatches[matchIndex].games];
-                newGames[gameIndex] = { ...newGames[gameIndex], [field]: value };
-                newMatches[matchIndex].games = newGames;
-                setFormData({ ...formData, matches: newMatches });
+            const updateGame = (mIdx, gIdx, f, v) => {
+                const nM = [...formData.matches]; const nG = [...nM[mIdx].games]; nG[gIdx] = { ...nG[gIdx], [f]: v }; nM[mIdx].games = nG; setFormData({ ...formData, matches: nM });
             };
-
             const removeLastMatch = () => {
-                if (formData.matches.length > 1) {
-                    setFormData(prev => ({ ...prev, matches: prev.matches.slice(0, -1) }));
-                }
+                if (formData.matches.length > 1) setFormData(prev => ({ ...prev, matches: prev.matches.slice(0, -1) }));
             };
 
-            // Fetch Images (Split Main/Side)
             const handleFetchImages = async () => {
                 if (!formData.deckListText) return;
                 setIsLoadingImages(true);
@@ -253,11 +239,18 @@
                 setIsLoadingImages(false);
             };
 
-            const handleSave = () => {
-                if (!formData.deckName) {
-                    alert("デッキ名を入力してください");
-                    return;
+            const handleDeleteRecord = () => {
+                if (!editingId) return;
+                if (window.confirm("本当にこの記録を削除しますか？\n（この操作は取り消せません）")) {
+                    const updatedRecords = records.filter(r => r.id !== editingId);
+                    setRecords(updatedRecords);
+                    localStorage.setItem('mtg_records_v9', JSON.stringify(updatedRecords)); // デッキは消さない
+                    setView('list');
                 }
+            };
+
+            const handleSave = () => {
+                if (!formData.deckName) { alert("デッキ名を入力してください"); return; }
 
                 let eventWins = 0, eventLosses = 0, eventDraws = 0;
                 const processedMatches = formData.matches.map(m => {
@@ -270,8 +263,7 @@
                     return { ...m, matchResult, gWins, gLosses };
                 });
 
-                const newRecord = {
-                    id: Date.now(),
+                const recordData = {
                     date: formData.date,
                     location: formData.location,
                     deckName: formData.deckName,
@@ -281,13 +273,19 @@
                     diffSnapshot: deckDiff
                 };
 
-                const updatedRecords = [newRecord, ...records];
+                let updatedRecords;
+                if (editingId) {
+                    // 更新モード: IDを維持して置換
+                    updatedRecords = records.map(r => r.id === editingId ? { ...recordData, id: editingId } : r);
+                } else {
+                    // 新規モード
+                    updatedRecords = [{ ...recordData, id: Date.now() }, ...records];
+                }
+
+                // デッキ情報は常に最新で上書き保存
                 const updatedDecks = { 
                     ...decks, 
-                    [formData.deckName]: { 
-                        parsed: parsedDeckForDiff, 
-                        text: formData.deckListText 
-                    } 
+                    [formData.deckName]: { parsed: parsedDeckForDiff, text: formData.deckListText } 
                 };
 
                 setRecords(updatedRecords);
@@ -296,6 +294,7 @@
                 
                 setView('list');
                 setFormData(initialForm);
+                setEditingId(null);
                 setDeckDiff(null);
                 setDeckImagesData({ main: [], side: [] });
             };
@@ -333,7 +332,7 @@
                             </div>
                         )}
 
-                        {/* === New Entry === */}
+                        {/* === Entry Form (New / Edit) === */}
                         {view === 'new' && (
                             <div className="bg-white rounded-xl shadow-lg p-5 animate-fade-in space-y-6">
                                 <div className="flex justify-between items-center">
@@ -341,7 +340,8 @@
                                         <Icon name="arrow-left" size={16} /> キャンセル
                                     </button>
                                     <h2 className="text-slate-800 font-bold flex items-center gap-2">
-                                        <Icon name="file-edit" size={18} /> イベント記録
+                                        <Icon name={editingId ? "edit" : "file-edit"} size={18} /> 
+                                        {editingId ? "記録を編集" : "イベント記録"}
                                     </h2>
                                 </div>
                                 
@@ -413,7 +413,6 @@
                                     </div>
                                 </div>
 
-                                {/* Decklist & Preview */}
                                 <div className="space-y-2 pt-6 border-t mt-8">
                                     <div className="flex justify-between items-center">
                                         <label className="text-xs font-bold text-slate-500 uppercase">Decklist & Diff</label>
@@ -427,7 +426,6 @@
                                         <div className="h-24 overflow-y-auto border rounded p-2 text-xs bg-white">
                                             {deckDiff ? (
                                                 <div className="space-y-1">
-                                                    {/* Diff表示に枚数を復活 */}
                                                     {deckDiff.in.map((c, i) => <div key={i} className="text-green-600 flex items-center gap-1"><Icon name="plus" size={10}/> {c.count} {c.name}</div>)}
                                                     {deckDiff.out.map((c, i) => <div key={i} className="text-red-500 flex items-center gap-1"><Icon name="minus" size={10}/> {c.count} {c.name}</div>)}
                                                 </div>
@@ -435,17 +433,16 @@
                                         </div>
                                     </div>
                                     
-                                    {/* Images Split View */}
                                     {isLoadingImages && <div className="text-xs text-slate-400 text-center py-2">Loading images...</div>}
                                     {(deckImagesData.main.length > 0 || deckImagesData.side.length > 0) && (
                                         <div className="bg-slate-100 p-2 rounded border border-slate-200 mt-2">
                                             {deckImagesData.main.length > 0 && (
                                                 <div className="mb-4">
                                                     <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-1 border-b border-slate-300 pb-1">Mainboard</h4>
-                                                    <div className="flex overflow-x-auto gap-2 py-1">
+                                                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
                                                         {deckImagesData.main.map((img, i) => (
-                                                            <div key={i} className="relative flex-shrink-0">
-                                                                <img src={img.url} className="w-16 rounded shadow" />
+                                                            <div key={i} className="relative group">
+                                                                <img src={img.url} className="w-full rounded shadow hover:scale-110 transition-transform z-0 hover:z-10" />
                                                                 <span className="absolute bottom-0 right-0 bg-black/80 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-tl-lg rounded-br border-t border-l border-white/20 card-count-badge">×{img.count}</span>
                                                             </div>
                                                         ))}
@@ -454,11 +451,11 @@
                                             )}
                                             {deckImagesData.side.length > 0 && (
                                                 <div>
-                                                    <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-1 border-b border-slate-300 pb-1">Sideboard (Bottom 15)</h4>
-                                                    <div className="flex overflow-x-auto gap-2 py-1">
+                                                    <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-1 border-b border-slate-300 pb-1">Sideboard</h4>
+                                                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
                                                         {deckImagesData.side.map((img, i) => (
-                                                            <div key={i} className="relative flex-shrink-0">
-                                                                <img src={img.url} className="w-16 rounded shadow" />
+                                                            <div key={i} className="relative group">
+                                                                <img src={img.url} className="w-full rounded shadow hover:scale-110 transition-transform z-0 hover:z-10" />
                                                                 <span className="absolute bottom-0 right-0 bg-black/80 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-tl-lg rounded-br border-t border-l border-white/20 card-count-badge">×{img.count}</span>
                                                             </div>
                                                         ))}
@@ -470,8 +467,14 @@
                                 </div>
 
                                 <button onClick={handleSave} className="w-full bg-slate-800 text-white py-4 rounded-xl font-bold hover:bg-slate-700 transition flex justify-center items-center gap-2 shadow-xl text-lg">
-                                    <Icon name="save" /> 記録を保存
+                                    <Icon name={editingId ? "refresh-cw" : "save"} /> {editingId ? "記録を更新" : "記録を保存"}
                                 </button>
+                                
+                                {editingId && (
+                                    <button onClick={handleDeleteRecord} className="w-full mt-2 text-red-500 text-xs font-bold hover:text-red-700 py-2 border border-transparent hover:border-red-100 rounded transition">
+                                        この記録を削除する
+                                    </button>
+                                )}
                             </div>
                         )}
 
@@ -482,7 +485,13 @@
                                     <Icon name="history" size={16} /> History
                                 </h2>
                                 {records.length === 0 && <div className="text-center py-12 text-slate-400 bg-white rounded-xl shadow border border-dashed border-slate-300"><p>記録なし</p></div>}
-                                {records.map((record) => <EventCard key={record.id} record={record} />)}
+                                {records.map((record) => (
+                                    <EventCard 
+                                        key={record.id} 
+                                        record={record} 
+                                        onEdit={() => startEditEvent(record)}
+                                    />
+                                ))}
                             </div>
                         )}
                     </main>
@@ -490,7 +499,7 @@
             );
         };
 
-        const EventCard = ({ record }) => {
+        const EventCard = ({ record, onEdit }) => {
             const [expanded, setExpanded] = useState(false);
             const [showDeckImages, setShowDeckImages] = useState(false);
             const [imagesData, setImagesData] = useState({ main: [], side: [] });
@@ -517,9 +526,18 @@
             };
 
             return (
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition">
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition relative">
+                    {/* 編集ボタン */}
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                        className="absolute top-4 right-4 z-10 text-slate-300 hover:text-blue-500 transition p-1 rounded-full hover:bg-blue-50"
+                        title="Edit Record"
+                    >
+                        <Icon name="pencil" size={16} />
+                    </button>
+
                     <div className="p-4 cursor-pointer bg-gradient-to-r from-white to-slate-50 hover:bg-slate-50 transition" onClick={() => setExpanded(!expanded)}>
-                        <div className="flex justify-between items-start">
+                        <div className="flex justify-between items-start pr-8">
                             <div>
                                 <div className="flex flex-wrap gap-2 text-xs text-slate-500 font-bold mb-1 items-center">
                                     <span className="flex items-center gap-1"><Icon name="calendar" size={12}/> {record.date}</span>
@@ -528,7 +546,6 @@
                                 <h3 className="font-bold text-lg text-slate-800">{record.deckName}</h3>
                                 {record.diffSnapshot && (
                                     <div className="text-[10px] mt-1 flex flex-wrap gap-2">
-                                        {/* 履歴のDiff表示にも枚数を復活 */}
                                         {record.diffSnapshot.in.length > 0 && <span className="text-green-600 flex items-center gap-1">In: {record.diffSnapshot.in.map(c => `${c.count} ${c.name}`).join(", ")}</span>}
                                         {record.diffSnapshot.out.length > 0 && <span className="text-red-500 flex items-center gap-1">Out: {record.diffSnapshot.out.map(c => `${c.count} ${c.name}`).join(", ")}</span>}
                                     </div>
