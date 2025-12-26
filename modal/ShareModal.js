@@ -28,12 +28,21 @@ const ShareModal = ({ record, onClose }) => {
 
     const captureImage = async () => {
         if (!captureRef.current) return null;
-        // html2canvasの設定：スケールを上げて高画質化
-        return await html2canvas(captureRef.current, { 
-            scale: 3, // スケールを少し上げてみる
+        
+        const element = captureRef.current;
+        // 要素のスクロールを含めた全体のサイズを取得
+        const { scrollWidth, scrollHeight } = element;
+
+        return await html2canvas(element, { 
+            scale: 3, 
             backgroundColor: "#ffffff",
             useCORS: true,
-            logging: false
+            logging: false,
+            // ★修正: 全体を描画させるためのサイズ指定
+            width: scrollWidth,
+            height: scrollHeight,
+            windowWidth: scrollWidth,
+            windowHeight: scrollHeight
         });
     };
 
@@ -105,10 +114,8 @@ const ShareModal = ({ record, onClose }) => {
                                     <span className="flex items-center gap-1 h-6"><Icon name="calendar" size={16}/> {record.date}</span>
                                     {record.location && <span className="bg-slate-100 px-2 rounded-full flex items-center gap-1 border border-slate-200 h-6"><Icon name="map-pin" size={14}/> {record.location}</span>}
                                 </div>
-                                {/* デッキ名: flex items-end leading-none で下揃えつつ行間を詰める */}
                                 <h1 className="text-4xl font-black text-slate-900 flex items-end leading-none pb-1">{record.deckName}</h1>
                             </div>
-                            {/* スコア: h-full flex items-center justify-center leading-none で完全中央固定 */}
                             <div className={`text-5xl font-black px-6 rounded-xl border-4 ${scoreColor} h-full flex items-center justify-center leading-none ml-4`}>
                                 {record.eventWins}-{record.eventLosses}
                             </div>
@@ -135,9 +142,7 @@ const ShareModal = ({ record, onClose }) => {
                                             const isWin = g.result === 'win';
                                             const isLoss = g.result === 'loss';
                                             return (
-                                                /* Game Row: h-8 flex items-center で行の高さを固定し中央揃え */
                                                 <div key={j} className="flex items-center gap-3 text-sm h-8">
-                                                    {/* 先手後手: h-6 w-8 flex items-center justify-center leading-none */}
                                                     <div className="flex items-center justify-center w-8 h-6">
                                                         {g.onPlay !== null && (
                                                             <span className={`text-[10px] font-bold px-1.5 rounded-sm text-center border w-full h-full flex items-center justify-center leading-none ${g.onPlay ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
@@ -145,11 +150,9 @@ const ShareModal = ({ record, onClose }) => {
                                                             </span>
                                                         )}
                                                     </div>
-                                                    {/* W/L/D: h-6 w-6 flex items-center justify-center leading-none */}
                                                     <span className={`font-black font-mono w-6 h-6 text-center text-base flex justify-center items-center leading-none ${isWin ? 'text-blue-600' : isLoss ? 'text-red-600' : 'text-slate-300'}`}>
                                                         {isWin ? 'W' : isLoss ? 'L' : '-'}
                                                     </span>
-                                                    {/* メモ: h-full flex items-center */}
                                                     <span className="text-slate-600 flex-1 border-b border-slate-50 h-full flex items-center text-sm truncate leading-none">
                                                         {g.memo || <span className="text-slate-300 italic text-xs">No memo</span>}
                                                     </span>
