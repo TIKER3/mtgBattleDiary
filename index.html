@@ -19,14 +19,19 @@
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
-        .card-count-badge { text-shadow: 0px 1px 2px rgba(0,0,0,0.8); }
+        .card-count-badge { text-shadow: 0px 1px 2px rgba(0,0,0,0.8); box-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+        
+        /* カードスタックのアニメーション */
+        .card-stack-item { transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1); }
+        /* ホバー時は手前に大きく表示 */
+        .card-stack-item:hover { transform: scale(1.15) translateY(-10px); z-index: 100; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border-radius: 0.5rem; }
     </style>
 </head>
 <body class="bg-slate-100 text-slate-800 font-sans pb-40">
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useRef } = React;
 
         // --- Icon Component ---
         const Icon = ({ name, size = 18, className = "" }) => {
@@ -100,6 +105,37 @@
             return { main: attachUrl(mainList), side: attachUrl(sideList) };
         };
 
+        // --- Component: Overlapping Card Display (Modified) ---
+        const DeckImageViewer = ({ images, title }) => {
+            if (!images || images.length === 0) return null;
+            return (
+                <div className="mb-6">
+                    <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-2 border-b border-slate-300 pb-1">{title}</h4>
+                    {/* Grid layout:
+                        - grid-cols-3: 3列 (Mobile)
+                        - grid-cols-6: 6列 (PC)
+                        - pt-24: 最初の行が上に飛び出しすぎないようにパディング確保
+                    */}
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-x-2 pt-24 pb-4 px-1">
+                        {images.map((img, i) => (
+                            <div key={i} className="relative w-full -mt-24 card-stack-item">
+                                {/* カード画像 */}
+                                <img src={img.url} className="w-full rounded-lg shadow-md border border-slate-600 bg-slate-800 block" alt={img.name} />
+                                
+                                {/* 枚数バッジ: 
+                                    - absolute top-1 right-1: 右上に配置
+                                    - z-10: 画像の上に表示
+                                */}
+                                <span className="absolute top-1 right-1 bg-black/90 text-white text-[10px] font-bold px-1.5 py-0.5 rounded border border-white/30 card-count-badge z-10">
+                                    ×{img.count}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
         // --- Data Structures ---
         const createGamesBlock = () => [
             { id: 1, result: null, onPlay: null, memo: '' },
@@ -129,14 +165,16 @@
             };
 
             const [formData, setFormData] = useState(initialForm);
-            const [editingId, setEditingId] = useState(null); // 編集中のIDを管理
+            const [editingId, setEditingId] = useState(null); 
             const [parsedDeckForDiff, setParsedDeckForDiff] = useState({});
             
             const [deckImagesData, setDeckImagesData] = useState({ main: [], side: [] });
             const [deckDiff, setDeckDiff] = useState(null);
             const [isLoadingImages, setIsLoadingImages] = useState(false);
+            
+            const fileInputRef = useRef(null);
 
-            // Load Data (Version 9)
+            // Load Data
             useEffect(() => {
                 const savedRecords = localStorage.getItem('mtg_records_v9');
                 const savedDecks = localStorage.getItem('mtg_decks_v9');
@@ -160,7 +198,7 @@
                     deckListText: existingDeckData ? existingDeckData.text : '',
                     date: new Date().toISOString().split('T')[0]
                 });
-                setEditingId(null); // 新規作成モード
+                setEditingId(null);
                 
                 if (existingDeckData) {
                     const parsed = parseDeckListForDiff(existingDeckData.text);
@@ -175,7 +213,6 @@
 
             // Edit Existing Event
             const startEditEvent = (record) => {
-                // データをコピーしてフォームにセット（参照渡しを防ぐためDeep Copy）
                 setFormData(JSON.parse(JSON.stringify({
                     date: record.date,
                     location: record.location,
@@ -184,18 +221,22 @@
                     matches: record.matches
                 })));
                 
-                setEditingId(record.id); // 編集モードIDセット
-                setDeckDiff(record.diffSnapshot); // 保存されていたDiffを復元
+                setEditingId(record.id); 
+                setDeckDiff(record.diffSnapshot); 
                 setParsedDeckForDiff(parseDeckListForDiff(record.deckListText));
-                setDeckImagesData({ main: [], side: [] }); // 画像は重いのでリセット（ボタン押下で再取得）
+                setDeckImagesData({ main: [], side: [] });
                 
                 setView('new');
-                // スクロールトップ
                 window.scrollTo(0, 0);
             };
 
             const handleDeckListChange = (text) => {
                 setFormData(prev => ({ ...prev, deckListText: text }));
+                
+                if (editingId) {
+                    return; 
+                }
+
                 const currentParsed = parseDeckListForDiff(text);
                 setParsedDeckForDiff(currentParsed);
 
@@ -244,7 +285,7 @@
                 if (window.confirm("本当にこの記録を削除しますか？\n（この操作は取り消せません）")) {
                     const updatedRecords = records.filter(r => r.id !== editingId);
                     setRecords(updatedRecords);
-                    localStorage.setItem('mtg_records_v9', JSON.stringify(updatedRecords)); // デッキは消さない
+                    localStorage.setItem('mtg_records_v9', JSON.stringify(updatedRecords)); 
                     setView('list');
                 }
             };
@@ -270,19 +311,16 @@
                     deckListText: formData.deckListText,
                     matches: processedMatches,
                     eventWins, eventLosses, eventDraws,
-                    diffSnapshot: deckDiff
+                    diffSnapshot: editingId ? deckDiff : deckDiff
                 };
 
                 let updatedRecords;
                 if (editingId) {
-                    // 更新モード: IDを維持して置換
                     updatedRecords = records.map(r => r.id === editingId ? { ...recordData, id: editingId } : r);
                 } else {
-                    // 新規モード
                     updatedRecords = [{ ...recordData, id: Date.now() }, ...records];
                 }
 
-                // デッキ情報は常に最新で上書き保存
                 const updatedDecks = { 
                     ...decks, 
                     [formData.deckName]: { parsed: parsedDeckForDiff, text: formData.deckListText } 
@@ -297,6 +335,83 @@
                 setEditingId(null);
                 setDeckDiff(null);
                 setDeckImagesData({ main: [], side: [] });
+            };
+
+            const exportDeckHistory = (e, deckName) => {
+                e.stopPropagation();
+                const targetRecords = records.filter(r => r.deckName === deckName);
+                if (targetRecords.length === 0) {
+                    alert("No records to export.");
+                    return;
+                }
+                const dataStr = JSON.stringify(targetRecords, null, 2);
+                const blob = new Blob([dataStr], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `mtg_history_${deckName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
+
+            const triggerImport = () => {
+                fileInputRef.current.click();
+            };
+
+            const handleImportFile = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        const importedRecords = JSON.parse(event.target.result);
+                        if (!Array.isArray(importedRecords)) {
+                            alert("Invalid file format.");
+                            return;
+                        }
+
+                        let newRecords = [...records];
+                        let updatedCount = 0;
+                        let addedCount = 0;
+
+                        importedRecords.forEach(impRec => {
+                            const idx = newRecords.findIndex(r => r.id === impRec.id);
+                            if (idx > -1) {
+                                newRecords[idx] = impRec; 
+                                updatedCount++;
+                            } else {
+                                newRecords.push(impRec); 
+                                addedCount++;
+                            }
+                        });
+
+                        newRecords.sort((a, b) => b.id - a.id);
+
+                        let newDecks = { ...decks };
+                        importedRecords.forEach(rec => {
+                            if (rec.deckName && !newDecks[rec.deckName] && rec.deckListText) {
+                                newDecks[rec.deckName] = {
+                                    text: rec.deckListText,
+                                    parsed: parseDeckListForDiff(rec.deckListText)
+                                };
+                            }
+                        });
+
+                        setRecords(newRecords);
+                        setDecks(newDecks);
+                        saveToStorage(newRecords, newDecks);
+                        alert(`インポート完了\n更新: ${updatedCount}件\n追加: ${addedCount}件`);
+
+                    } catch (err) {
+                        alert("Error parsing JSON file.");
+                        console.error(err);
+                    }
+                    e.target.value = ''; 
+                };
+                reader.readAsText(file);
             };
 
             return (
@@ -317,16 +432,30 @@
                                 </h2>
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
                                     {Object.keys(decks).map(dName => (
-                                        <button key={dName} onClick={() => startNewEvent(dName, decks[dName])}
-                                            className="bg-white border border-slate-200 p-3 rounded-xl shadow-sm hover:shadow-md hover:border-blue-300 hover:bg-blue-50 transition text-left group">
-                                            <div className="text-xs text-slate-400 mb-1">Use Deck:</div>
-                                            <div className="font-bold text-slate-800 text-sm truncate group-hover:text-blue-700">{dName}</div>
-                                        </button>
+                                        <div key={dName} className="relative group">
+                                            <button onClick={() => startNewEvent(dName, decks[dName])}
+                                                className="w-full h-full bg-white border border-slate-200 p-3 rounded-xl shadow-sm hover:shadow-md hover:border-blue-300 hover:bg-blue-50 transition text-left group">
+                                                <div className="text-xs text-slate-400 mb-1">Use Deck:</div>
+                                                <div className="font-bold text-slate-800 text-sm truncate group-hover:text-blue-700 pr-6">{dName}</div>
+                                            </button>
+                                            <button onClick={(e) => exportDeckHistory(e, dName)} 
+                                                className="absolute top-2 right-2 text-slate-300 hover:text-blue-600 p-1 rounded-full hover:bg-blue-100 transition z-10"
+                                                title="Download History">
+                                                <Icon name="download" size={14} />
+                                            </button>
+                                        </div>
                                     ))}
                                     <button onClick={() => startNewEvent()}
-                                        className="bg-slate-200 border border-slate-300 border-dashed p-3 rounded-xl shadow-inner hover:bg-white hover:border-orange-400 hover:text-orange-600 transition flex flex-col items-center justify-center gap-1 text-slate-500">
+                                        className="bg-slate-200 border border-slate-300 border-dashed p-3 rounded-xl shadow-inner hover:bg-white hover:border-orange-400 hover:text-orange-600 transition flex flex-col items-center justify-center gap-1 text-slate-500 min-h-[80px]">
                                         <Icon name="plus" size={24} />
                                         <span className="text-xs font-bold">New Deck</span>
+                                    </button>
+                                </div>
+                                
+                                <div className="flex justify-end mt-2">
+                                    <input type="file" ref={fileInputRef} onChange={handleImportFile} className="hidden" accept=".json" />
+                                    <button onClick={triggerImport} className="text-xs font-bold text-slate-400 hover:text-slate-600 flex items-center gap-1">
+                                        <Icon name="upload" size={12} /> 履歴データの取り込み (JSON)
                                     </button>
                                 </div>
                             </div>
@@ -429,39 +558,17 @@
                                                     {deckDiff.in.map((c, i) => <div key={i} className="text-green-600 flex items-center gap-1"><Icon name="plus" size={10}/> {c.count} {c.name}</div>)}
                                                     {deckDiff.out.map((c, i) => <div key={i} className="text-red-500 flex items-center gap-1"><Icon name="minus" size={10}/> {c.count} {c.name}</div>)}
                                                 </div>
-                                            ) : <div className="text-slate-300 italic text-center mt-8">変更なし / 新規</div>}
+                                            ) : <div className="text-slate-300 italic text-center mt-8">
+                                                {editingId ? "編集中のため差分計算無効" : "変更なし / 新規"}
+                                            </div>}
                                         </div>
                                     </div>
                                     
                                     {isLoadingImages && <div className="text-xs text-slate-400 text-center py-2">Loading images...</div>}
                                     {(deckImagesData.main.length > 0 || deckImagesData.side.length > 0) && (
                                         <div className="bg-slate-100 p-2 rounded border border-slate-200 mt-2">
-                                            {deckImagesData.main.length > 0 && (
-                                                <div className="mb-4">
-                                                    <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-1 border-b border-slate-300 pb-1">Mainboard</h4>
-                                                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                                                        {deckImagesData.main.map((img, i) => (
-                                                            <div key={i} className="relative group">
-                                                                <img src={img.url} className="w-full rounded shadow hover:scale-110 transition-transform z-0 hover:z-10" />
-                                                                <span className="absolute bottom-0 right-0 bg-black/80 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-tl-lg rounded-br border-t border-l border-white/20 card-count-badge">×{img.count}</span>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
-                                            {deckImagesData.side.length > 0 && (
-                                                <div>
-                                                    <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-1 border-b border-slate-300 pb-1">Sideboard</h4>
-                                                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                                                        {deckImagesData.side.map((img, i) => (
-                                                            <div key={i} className="relative group">
-                                                                <img src={img.url} className="w-full rounded shadow hover:scale-110 transition-transform z-0 hover:z-10" />
-                                                                <span className="absolute bottom-0 right-0 bg-black/80 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-tl-lg rounded-br border-t border-l border-white/20 card-count-badge">×{img.count}</span>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
+                                            <DeckImageViewer images={deckImagesData.main} title="Mainboard" />
+                                            <DeckImageViewer images={deckImagesData.side} title="Sideboard" />
                                         </div>
                                     )}
                                 </div>
@@ -527,7 +634,6 @@
 
             return (
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition relative">
-                    {/* 編集ボタン */}
                     <button 
                         onClick={(e) => { e.stopPropagation(); onEdit(); }}
                         className="absolute top-4 right-4 z-10 text-slate-300 hover:text-blue-500 transition p-1 rounded-full hover:bg-blue-50"
@@ -601,32 +707,8 @@
                                         {loading && <div className="text-center text-xs text-slate-500 py-4">Loading cards...</div>}
                                         {!loading && (
                                             <div>
-                                                {imagesData.main.length > 0 && (
-                                                    <div className="mb-4">
-                                                        <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-1 border-b border-slate-300 pb-1">Mainboard</h4>
-                                                        <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                                                            {imagesData.main.map((img, i) => (
-                                                                <div key={i} className="relative group">
-                                                                    <img src={img.url} className="w-full rounded shadow hover:scale-110 transition-transform z-0 hover:z-10" />
-                                                                    <span className="absolute bottom-0 right-0 bg-black/80 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-tl-lg rounded-br border-t border-l border-white/20 card-count-badge">×{img.count}</span>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                                {imagesData.side.length > 0 && (
-                                                    <div>
-                                                        <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-1 border-b border-slate-300 pb-1">Sideboard</h4>
-                                                        <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                                                            {imagesData.side.map((img, i) => (
-                                                                <div key={i} className="relative group">
-                                                                    <img src={img.url} className="w-full rounded shadow hover:scale-110 transition-transform z-0 hover:z-10" />
-                                                                    <span className="absolute bottom-0 right-0 bg-black/80 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-tl-lg rounded-br border-t border-l border-white/20 card-count-badge">×{img.count}</span>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                )}
+                                                <DeckImageViewer images={imagesData.main} title="Mainboard" />
+                                                <DeckImageViewer images={imagesData.side} title="Sideboard" />
                                             </div>
                                         )}
                                     </div>
