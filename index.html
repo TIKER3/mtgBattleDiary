@@ -14,6 +14,8 @@
     
     <script src="https://unpkg.com/lucide@latest"></script>
 
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+
     <style>
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -134,12 +136,173 @@
             games: createGamesBlock()
         });
 
+        // --- Share Modal Component ---
+        const ShareModal = ({ record, onClose }) => {
+            const captureRef = useRef(null);
+            const [isSharing, setIsSharing] = useState(false);
+
+            // ★ スマートフォン判定 (User Agent check)
+            const isMobile = useMemo(() => {
+                return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+            }, []);
+
+            const captureImage = async () => {
+                if (!captureRef.current) return null;
+                return await html2canvas(captureRef.current, { 
+                    scale: 2, 
+                    backgroundColor: "#ffffff",
+                    useCORS: true,
+                    logging: false
+                });
+            };
+
+            const downloadImage = async () => {
+                try {
+                    const canvas = await captureImage();
+                    if (!canvas) return;
+                    const link = document.createElement('a');
+                    link.download = `mtg_result_${record.date}_${record.deckName.replace(/\s+/g,'_')}.png`;
+                    link.href = canvas.toDataURL('image/png');
+                    link.click();
+                } catch (err) {
+                    console.error(err);
+                    alert("画像の保存に失敗しました。");
+                }
+            };
+
+            // スマホ専用: Web Share APIで画像付きシェア
+            const shareToX = async () => {
+                setIsSharing(true);
+                const text = `MTG Result: ${record.deckName}\n${record.eventWins}-${record.eventLosses}\n#MTG #MTGBattleDiary`;
+                
+                try {
+                    const canvas = await captureImage();
+                    if (!canvas) throw new Error("Canvas generation failed");
+
+                    if (navigator.share && navigator.canShare) {
+                        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+                        const file = new File([blob], "result.png", { type: "image/png" });
+                        
+                        // 画像ファイルの共有が可能かチェック
+                        if (navigator.canShare({ files: [file] })) {
+                            await navigator.share({
+                                text: text,
+                                files: [file]
+                            });
+                        } else {
+                            alert("お使いの環境は画像の直接共有に対応していません。画像を保存して手動で投稿してください。");
+                        }
+                    } else {
+                        alert("Web Share APIがサポートされていません。");
+                    }
+                } catch (err) {
+                    console.error("Share failed", err);
+                    alert("シェアに失敗しました。");
+                } finally {
+                    setIsSharing(false);
+                }
+            };
+
+            const scoreColor = record.eventWins > record.eventLosses ? 'text-blue-600 bg-blue-50 border-blue-100' : 
+                               record.eventLosses > record.eventWins ? 'text-red-600 bg-red-50 border-red-100' : 'text-slate-600 bg-slate-100';
+
+            return (
+                <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 overflow-y-auto backdrop-blur-sm">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full overflow-hidden animate-fade-in flex flex-col max-h-[90vh]">
+                        <div className="p-4 border-b flex justify-between items-center bg-slate-50 shrink-0">
+                            <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                                <Icon name="share-2" size={18}/> 結果をシェア
+                            </h3>
+                            <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><Icon name="x" size={20}/></button>
+                        </div>
+                        
+                        <div className="p-6 bg-slate-200 overflow-auto flex-1 flex justify-center items-start">
+                            <div ref={captureRef} className="w-[600px] min-w-[600px] bg-white p-8 rounded-xl shadow-lg text-slate-800 font-sans border border-slate-200 box-border">
+                                <div className="flex justify-between items-start mb-8">
+                                    <div>
+                                        <div className="flex items-center gap-3 text-slate-500 text-sm font-bold mb-2">
+                                            <span className="flex items-center gap-1"><Icon name="calendar" size={16}/> {record.date}</span>
+                                            {record.location && <span className="bg-slate-100 px-2 py-0.5 rounded-full flex items-center gap-1 border border-slate-200"><Icon name="map-pin" size={14}/> {record.location}</span>}
+                                        </div>
+                                        <h1 className="text-4xl font-black text-slate-900 leading-tight tracking-tight">{record.deckName}</h1>
+                                    </div>
+                                    <div className={`text-5xl font-black px-6 py-4 rounded-xl border-4 ${scoreColor} tracking-tighter`}>
+                                        {record.eventWins}-{record.eventLosses}
+                                    </div>
+                                </div>
+                                <div className="space-y-4">
+                                    {record.matches.map((match, i) => (
+                                        <div key={i} className="border-2 border-slate-100 rounded-xl overflow-hidden">
+                                            <div className="bg-slate-50 border-b border-slate-100 px-5 py-3 flex justify-between items-center">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="bg-slate-800 text-white text-sm font-bold px-2.5 py-1 rounded">R{match.id}</span>
+                                                    <span className="font-bold text-xl text-slate-700 tracking-tight">{match.opponentDeck || "Unknown Deck"}</span>
+                                                </div>
+                                                <span className={`text-lg font-black uppercase ${match.matchResult === 'win' ? 'text-blue-600' : match.matchResult === 'loss' ? 'text-red-600' : 'text-slate-400'}`}>
+                                                    {match.matchResult === 'win' ? 'WIN' : match.matchResult === 'loss' ? 'LOSS' : 'DRAW'}
+                                                </span>
+                                            </div>
+                                            <div className="bg-white p-4 space-y-2">
+                                                {match.games.map((g, j) => {
+                                                    if (!g.result && !g.memo && g.onPlay === null) return null;
+                                                    const isWin = g.result === 'win';
+                                                    const isLoss = g.result === 'loss';
+                                                    return (
+                                                        <div key={j} className="flex items-start gap-3 text-sm">
+                                                            <div className="flex flex-col gap-1 mt-0.5">
+                                                                {g.onPlay !== null && (
+                                                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded text-center border ${g.onPlay ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
+                                                                        {g.onPlay ? '先' : '後'}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <span className={`font-black font-mono w-5 text-center text-base ${isWin ? 'text-blue-600' : isLoss ? 'text-red-600' : 'text-slate-300'}`}>
+                                                                {isWin ? 'W' : isLoss ? 'L' : '-'}
+                                                            </span>
+                                                            <span className="text-slate-600 flex-1 leading-relaxed border-b border-slate-50 pb-1 text-base">
+                                                                {g.memo || <span className="text-slate-300 italic text-xs">No memo</span>}
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="mt-8 pt-4 border-t border-slate-100 text-right text-slate-400 text-xs font-bold flex justify-end items-center gap-1 uppercase tracking-widest">
+                                    <Icon name="pen-tool" size={12}/> MTG Battle Diary
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="p-4 bg-white border-t space-y-3 shrink-0">
+                            <button onClick={downloadImage} className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-lg shadow flex items-center justify-center gap-2 transition">
+                                <Icon name="download" /> 画像を保存
+                            </button>
+                            
+                            {/* ★ スマホの場合のみXシェアボタンを表示 */}
+                            {isMobile ? (
+                                <button onClick={shareToX} disabled={isSharing} className="w-full bg-[#1DA1F2] hover:bg-[#1a91da] text-white font-bold py-3 rounded-lg shadow flex items-center justify-center gap-2 transition disabled:opacity-50">
+                                    {isSharing ? "準備中..." : <><Icon name="twitter" /> Xでシェア (画像付き)</>}
+                                </button>
+                            ) : (
+                                <p className="text-center text-[10px] text-slate-400">
+                                    ※ PCでは画像を保存し、X等へ手動で投稿してください。
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         // --- Main App ---
         const MtgDiaryApp = () => {
             const [view, setView] = useState('list');
             const [records, setRecords] = useState([]); 
             const [decks, setDecks] = useState({});
             const [showGuide, setShowGuide] = useState(false);
+            const [shareRecord, setShareRecord] = useState(null);
 
             const initialForm = {
                 date: new Date().toISOString().split('T')[0],
@@ -159,7 +322,6 @@
             
             const fileInputRef = useRef(null);
 
-            // Load Data
             useEffect(() => {
                 const savedRecords = localStorage.getItem('mtg_records_v9');
                 const savedDecks = localStorage.getItem('mtg_decks_v9');
@@ -168,17 +330,14 @@
                 lucide.createIcons();
             }, []);
 
-            useEffect(() => { lucide.createIcons(); }, [view, records, deckDiff, formData.matches.length, showGuide]);
+            useEffect(() => { lucide.createIcons(); }, [view, records, deckDiff, formData.matches.length, showGuide, shareRecord]);
 
-            // --- ★Stats Calculation Logic★ ---
             const deckStats = useMemo(() => {
                 const stats = {};
-                // 各デッキの初期化
                 Object.keys(decks).forEach(name => {
                     stats[name] = { matchWins: 0, matchLosses: 0, matchDraws: 0, totalMatches: 0 };
                 });
                 
-                // レコードを集計
                 records.forEach(r => {
                     const name = r.deckName;
                     if (!stats[name]) stats[name] = { matchWins: 0, matchLosses: 0, matchDraws: 0, totalMatches: 0 };
@@ -193,7 +352,6 @@
                 });
                 return stats;
             }, [records, decks]);
-            // -----------------------------
 
             const saveToStorage = (newRecords, newDecks) => {
                 localStorage.setItem('mtg_records_v9', JSON.stringify(newRecords));
@@ -400,7 +558,7 @@
                         </h1>
                     </header>
 
-                    <main className="p-4">
+                    <main className="p-4 relative">
                         {view === 'list' && (
                             <div className="mb-8">
                                 <div className="bg-white rounded-xl shadow-sm border border-blue-100 p-4 mb-6">
@@ -425,7 +583,6 @@
                                 </h2>
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
                                     {Object.keys(decks).map(dName => {
-                                        // ★ Stats Display Logic
                                         const stat = deckStats[dName] || { matchWins: 0, matchLosses: 0, matchDraws: 0, totalMatches: 0 };
                                         const winRate = stat.totalMatches > 0 ? Math.round((stat.matchWins / (stat.matchWins + stat.matchLosses)) * 100) : 0;
                                         const rateColor = winRate >= 60 ? 'text-orange-600' : winRate >= 50 ? 'text-blue-600' : 'text-slate-400';
@@ -606,16 +763,24 @@
                                         key={record.id} 
                                         record={record} 
                                         onEdit={() => startEditEvent(record)}
+                                        onShare={() => setShareRecord(record)} 
                                     />
                                 ))}
                             </div>
+                        )}
+                        
+                        {shareRecord && (
+                            <ShareModal 
+                                record={shareRecord} 
+                                onClose={() => setShareRecord(null)} 
+                            />
                         )}
                     </main>
                 </div>
             );
         };
 
-        const EventCard = ({ record, onEdit }) => {
+        const EventCard = ({ record, onEdit, onShare }) => { 
             const [expanded, setExpanded] = useState(false);
             const [showDeckImages, setShowDeckImages] = useState(false);
             const [imagesData, setImagesData] = useState({ main: [], side: [] });
@@ -643,22 +808,15 @@
 
             return (
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition relative">
-                    <button 
-                        onClick={(e) => { e.stopPropagation(); onEdit(); }}
-                        className="absolute top-4 right-4 z-10 text-slate-300 hover:text-blue-500 transition p-1 rounded-full hover:bg-blue-50"
-                        title="Edit Record"
-                    >
-                        <Icon name="pencil" size={16} />
-                    </button>
-
                     <div className="p-4 cursor-pointer bg-gradient-to-r from-white to-slate-50 hover:bg-slate-50 transition" onClick={() => setExpanded(!expanded)}>
-                        <div className="flex justify-between items-start pr-8">
-                            <div>
+                        <div className="flex justify-between items-start">
+                            {/* 左側: 日付・デッキ名・差分情報 */}
+                            <div className="pr-4">
                                 <div className="flex flex-wrap gap-2 text-xs text-slate-500 font-bold mb-1 items-center">
                                     <span className="flex items-center gap-1"><Icon name="calendar" size={12}/> {record.date}</span>
                                     {record.location && <span className="flex items-center gap-1 bg-white border px-1.5 rounded"><Icon name="map-pin" size={12}/> {record.location}</span>}
                                 </div>
-                                <h3 className="font-bold text-lg text-slate-800">{record.deckName}</h3>
+                                <h3 className="font-bold text-lg text-slate-800 break-words">{record.deckName}</h3>
                                 {record.diffSnapshot && (
                                     <div className="text-[10px] mt-1 flex flex-wrap gap-2">
                                         {record.diffSnapshot.in.length > 0 && <span className="text-green-600 flex items-center gap-1">In: {record.diffSnapshot.in.map(c => `${c.count} ${c.name}`).join(", ")}</span>}
@@ -666,7 +824,27 @@
                                     </div>
                                 )}
                             </div>
-                            <div className="flex flex-col items-end gap-1">
+                            
+                            {/* 右側: ボタンと成績を縦に積む */}
+                            <div className="flex flex-col items-end gap-3 shrink-0">
+                                {/* ボタン群 */}
+                                <div className="flex gap-2">
+                                    <button 
+                                        onClick={(e) => { e.stopPropagation(); onShare(); }}
+                                        className="text-slate-400 hover:text-blue-500 transition p-1.5 rounded-full hover:bg-blue-50 border border-transparent hover:border-blue-100"
+                                        title="Share Result"
+                                    >
+                                        <Icon name="share-2" size={16} />
+                                    </button>
+                                    <button 
+                                        onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                                        className="text-slate-400 hover:text-blue-500 transition p-1.5 rounded-full hover:bg-blue-50 border border-transparent hover:border-blue-100"
+                                        title="Edit Record"
+                                    >
+                                        <Icon name="pencil" size={16} />
+                                    </button>
+                                </div>
+                                {/* 成績バッジ */}
                                 <div className={`text-xl font-black px-3 py-1 rounded border ${scoreColor}`}>
                                     {record.eventWins}-{record.eventLosses}
                                 </div>
