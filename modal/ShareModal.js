@@ -1,3 +1,5 @@
+// modal/ShareModal.js
+
 // Reactのフックなどをグローバルから取得
 const { useState, useEffect, useRef, useMemo } = React;
 
@@ -26,11 +28,16 @@ const ShareModal = ({ record, onClose }) => {
 
     const captureImage = async () => {
         if (!captureRef.current) return null;
+        // 画像生成時のズレを防ぐため、オプションを調整
         return await html2canvas(captureRef.current, { 
             scale: 2, 
             backgroundColor: "#ffffff",
             useCORS: true,
-            logging: false
+            logging: false,
+            onclone: (document) => {
+                // キャプチャ時のみ、特定要素のスタイルを微調整することも可能
+                // 今回はCSSクラス側で対応済み
+            }
         });
     };
 
@@ -62,7 +69,7 @@ const ShareModal = ({ record, onClose }) => {
                 const file = new File([blob], "result.png", { type: "image/png" });
                 
                 if (navigator.canShare({ files: [file] })) {
-                    // シェア実行 (ここでOSの画面が開く)
+                    // シェア実行
                     await navigator.share({
                         text: text,
                         files: [file]
@@ -74,10 +81,9 @@ const ShareModal = ({ record, onClose }) => {
                 alert("Web Share APIがサポートされていません。");
             }
         } catch (err) {
-            // キャンセル時やエラー時
             console.error("Share failed or cancelled", err);
         } finally {
-            // ★シェア処理終了後はフラグを下ろすのみ（モーダルは閉じない＝画面は残る）
+            // シェア完了・キャンセル後はローディング状態のみ解除し、画面は残す
             setIsSharing(false);
         }
     };
@@ -98,16 +104,18 @@ const ShareModal = ({ record, onClose }) => {
                 <div className="p-6 bg-slate-200 overflow-auto flex-1 flex justify-center items-start">
                     <div ref={captureRef} className="w-[600px] min-w-[600px] bg-white p-8 rounded-xl shadow-lg text-slate-800 font-sans border border-slate-200 box-border">
                         
-                        {/* Header: items-center で垂直中央揃え */}
+                        {/* Header: tracking/leadingを削除し、flex centerで配置を安定化 */}
                         <div className="flex justify-between items-center mb-8">
-                            <div>
+                            <div className="flex flex-col justify-center">
                                 <div className="flex items-center gap-3 text-slate-500 text-sm font-bold mb-2">
                                     <span className="flex items-center gap-1"><Icon name="calendar" size={16}/> {record.date}</span>
                                     {record.location && <span className="bg-slate-100 px-2 py-0.5 rounded-full flex items-center gap-1 border border-slate-200"><Icon name="map-pin" size={14}/> {record.location}</span>}
                                 </div>
-                                <h1 className="text-4xl font-black text-slate-900 leading-tight tracking-tight">{record.deckName}</h1>
+                                {/* tracking-tight, leading-tight を削除 */}
+                                <h1 className="text-4xl font-black text-slate-900">{record.deckName}</h1>
                             </div>
-                            <div className={`text-5xl font-black px-6 py-4 rounded-xl border-4 ${scoreColor} tracking-tighter`}>
+                            {/* スコア部分 */}
+                            <div className={`text-5xl font-black px-6 py-4 rounded-xl border-4 ${scoreColor} flex items-center justify-center`}>
                                 {record.eventWins}-{record.eventLosses}
                             </div>
                         </div>
@@ -116,11 +124,12 @@ const ShareModal = ({ record, onClose }) => {
                         <div className="space-y-4">
                             {record.matches.map((match, i) => (
                                 <div key={i} className="border-2 border-slate-100 rounded-xl overflow-hidden">
-                                    {/* Match Header: items-center で垂直中央揃え */}
+                                    {/* Match Header */}
                                     <div className="bg-slate-50 border-b border-slate-100 px-5 py-3 flex justify-between items-center">
                                         <div className="flex items-center gap-3">
                                             <span className="bg-slate-800 text-white text-sm font-bold px-2.5 py-1 rounded">R{match.id}</span>
-                                            <span className="font-bold text-xl text-slate-700 tracking-tight">{match.opponentDeck || "Unknown Deck"}</span>
+                                            {/* tracking-tight を削除 */}
+                                            <span className="font-bold text-xl text-slate-700">{match.opponentDeck || "Unknown Deck"}</span>
                                         </div>
                                         <span className={`text-lg font-black uppercase ${match.matchResult === 'win' ? 'text-blue-600' : match.matchResult === 'loss' ? 'text-red-600' : 'text-slate-400'}`}>
                                             {match.matchResult === 'win' ? 'WIN' : match.matchResult === 'loss' ? 'LOSS' : 'DRAW'}
@@ -133,20 +142,19 @@ const ShareModal = ({ record, onClose }) => {
                                             const isWin = g.result === 'win';
                                             const isLoss = g.result === 'loss';
                                             return (
-                                                /* Game Row: items-center で垂直中央揃え */
+                                                /* Game Row */
                                                 <div key={j} className="flex items-center gap-3 text-sm">
-                                                    {/* 先手後手: 余分なマージン(mt-0.5)を削除 */}
-                                                    <div className="flex flex-col gap-1">
+                                                    <div className="flex items-center justify-center w-8">
                                                         {g.onPlay !== null && (
-                                                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded text-center border ${g.onPlay ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
+                                                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded text-center border w-full ${g.onPlay ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
                                                                 {g.onPlay ? '先' : '後'}
                                                             </span>
                                                         )}
                                                     </div>
-                                                    <span className={`font-black font-mono w-5 text-center text-base ${isWin ? 'text-blue-600' : isLoss ? 'text-red-600' : 'text-slate-300'}`}>
+                                                    <span className={`font-black font-mono w-6 text-center text-base flex justify-center items-center ${isWin ? 'text-blue-600' : isLoss ? 'text-red-600' : 'text-slate-300'}`}>
                                                         {isWin ? 'W' : isLoss ? 'L' : '-'}
                                                     </span>
-                                                    <span className="text-slate-600 flex-1 leading-relaxed border-b border-slate-50 pb-1 text-base">
+                                                    <span className="text-slate-600 flex-1 border-b border-slate-50 pb-1 text-base leading-normal">
                                                         {g.memo || <span className="text-slate-300 italic text-xs">No memo</span>}
                                                     </span>
                                                 </div>
@@ -156,7 +164,7 @@ const ShareModal = ({ record, onClose }) => {
                                 </div>
                             ))}
                         </div>
-                        <div className="mt-8 pt-4 border-t border-slate-100 text-right text-slate-400 text-xs font-bold flex justify-end items-center gap-1 uppercase tracking-widest">
+                        <div className="mt-8 pt-4 border-t border-slate-100 text-right text-slate-400 text-xs font-bold flex justify-end items-center gap-1 uppercase">
                             <Icon name="pen-tool" size={12}/> MTG Battle Diary
                         </div>
                     </div>
