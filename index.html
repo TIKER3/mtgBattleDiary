@@ -20,10 +20,7 @@
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
         .card-count-badge { text-shadow: 0px 1px 2px rgba(0,0,0,0.8); box-shadow: 0 2px 4px rgba(0,0,0,0.5); }
-        
-        /* カードスタックのアニメーション */
         .card-stack-item { transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1); }
-        /* ホバー時は手前に大きく表示 */
         .card-stack-item:hover { transform: scale(1.15) translateY(-10px); z-index: 100; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border-radius: 0.5rem; }
     </style>
 </head>
@@ -31,7 +28,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+        const { useState, useEffect, useRef, useMemo } = React;
 
         // --- Icon Component ---
         const Icon = ({ name, size = 18, className = "" }) => {
@@ -105,27 +102,15 @@
             return { main: attachUrl(mainList), side: attachUrl(sideList) };
         };
 
-        // --- Component: Overlapping Card Display (Modified) ---
         const DeckImageViewer = ({ images, title }) => {
             if (!images || images.length === 0) return null;
             return (
                 <div className="mb-6">
                     <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-2 border-b border-slate-300 pb-1">{title}</h4>
-                    {/* Grid layout:
-                        - grid-cols-3: 3列 (Mobile)
-                        - grid-cols-6: 6列 (PC)
-                        - pt-24: 最初の行が上に飛び出しすぎないようにパディング確保
-                    */}
                     <div className="grid grid-cols-3 sm:grid-cols-6 gap-x-2 pt-24 pb-4 px-1">
                         {images.map((img, i) => (
                             <div key={i} className="relative w-full -mt-24 card-stack-item">
-                                {/* カード画像 */}
                                 <img src={img.url} className="w-full rounded-lg shadow-md border border-slate-600 bg-slate-800 block" alt={img.name} />
-                                
-                                {/* 枚数バッジ: 
-                                    - absolute top-1 right-1: 右上に配置
-                                    - z-10: 画像の上に表示
-                                */}
                                 <span className="absolute top-1 right-1 bg-black/90 text-white text-[10px] font-bold px-1.5 py-0.5 rounded border border-white/30 card-count-badge z-10">
                                     ×{img.count}
                                 </span>
@@ -154,11 +139,8 @@
             const [view, setView] = useState('list');
             const [records, setRecords] = useState([]); 
             const [decks, setDecks] = useState({});
-            
-            // UI State
             const [showGuide, setShowGuide] = useState(false);
 
-            // Form State
             const initialForm = {
                 date: new Date().toISOString().split('T')[0],
                 location: '', 
@@ -188,12 +170,36 @@
 
             useEffect(() => { lucide.createIcons(); }, [view, records, deckDiff, formData.matches.length, showGuide]);
 
+            // --- ★Stats Calculation Logic★ ---
+            const deckStats = useMemo(() => {
+                const stats = {};
+                // 各デッキの初期化
+                Object.keys(decks).forEach(name => {
+                    stats[name] = { matchWins: 0, matchLosses: 0, matchDraws: 0, totalMatches: 0 };
+                });
+                
+                // レコードを集計
+                records.forEach(r => {
+                    const name = r.deckName;
+                    if (!stats[name]) stats[name] = { matchWins: 0, matchLosses: 0, matchDraws: 0, totalMatches: 0 };
+                    
+                    r.matches.forEach(m => {
+                        if (m.matchResult === 'win') stats[name].matchWins++;
+                        else if (m.matchResult === 'loss') stats[name].matchLosses++;
+                        else if (m.matchResult === 'draw') stats[name].matchDraws++;
+                        
+                        if (m.matchResult) stats[name].totalMatches++;
+                    });
+                });
+                return stats;
+            }, [records, decks]);
+            // -----------------------------
+
             const saveToStorage = (newRecords, newDecks) => {
                 localStorage.setItem('mtg_records_v9', JSON.stringify(newRecords));
                 localStorage.setItem('mtg_decks_v9', JSON.stringify(newDecks));
             };
 
-            // Start New Event
             const startNewEvent = (deckName = '', existingDeckData = null) => {
                 setFormData({
                     ...initialForm,
@@ -214,7 +220,6 @@
                 setView('new');
             };
 
-            // Edit Existing Event
             const startEditEvent = (record) => {
                 setFormData(JSON.parse(JSON.stringify({
                     date: record.date,
@@ -235,14 +240,9 @@
 
             const handleDeckListChange = (text) => {
                 setFormData(prev => ({ ...prev, deckListText: text }));
-                
-                if (editingId) {
-                    return; 
-                }
-
+                if (editingId) return; 
                 const currentParsed = parseDeckListForDiff(text);
                 setParsedDeckForDiff(currentParsed);
-
                 if (formData.deckName && decks[formData.deckName]) {
                     calculateDiff(decks[formData.deckName].parsed, currentParsed);
                 }
@@ -261,7 +261,6 @@
                 setDeckDiff((diff.in.length > 0 || diff.out.length > 0) ? diff : null);
             };
 
-            // Form Actions
             const addMatch = () => {
                 setFormData(prev => ({ ...prev, matches: [...prev.matches, createNewMatchBlock(prev.matches.length + 1)] }));
             };
@@ -350,7 +349,6 @@
                 const dataStr = JSON.stringify(targetRecords, null, 2);
                 const blob = new Blob([dataStr], { type: "application/json" });
                 const url = URL.createObjectURL(blob);
-                
                 const link = document.createElement('a');
                 link.href = url;
                 link.download = `mtg_history_${deckName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.json`;
@@ -359,59 +357,35 @@
                 document.body.removeChild(link);
             };
 
-            const triggerImport = () => {
-                fileInputRef.current.click();
-            };
+            const triggerImport = () => { fileInputRef.current.click(); };
 
             const handleImportFile = (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
-
                 const reader = new FileReader();
                 reader.onload = (event) => {
                     try {
                         const importedRecords = JSON.parse(event.target.result);
-                        if (!Array.isArray(importedRecords)) {
-                            alert("Invalid file format.");
-                            return;
-                        }
-
+                        if (!Array.isArray(importedRecords)) { alert("Invalid file format."); return; }
                         let newRecords = [...records];
-                        let updatedCount = 0;
-                        let addedCount = 0;
-
+                        let updatedCount = 0, addedCount = 0;
                         importedRecords.forEach(impRec => {
                             const idx = newRecords.findIndex(r => r.id === impRec.id);
-                            if (idx > -1) {
-                                newRecords[idx] = impRec; 
-                                updatedCount++;
-                            } else {
-                                newRecords.push(impRec); 
-                                addedCount++;
-                            }
+                            if (idx > -1) { newRecords[idx] = impRec; updatedCount++; } 
+                            else { newRecords.push(impRec); addedCount++; }
                         });
-
                         newRecords.sort((a, b) => b.id - a.id);
-
                         let newDecks = { ...decks };
                         importedRecords.forEach(rec => {
                             if (rec.deckName && !newDecks[rec.deckName] && rec.deckListText) {
-                                newDecks[rec.deckName] = {
-                                    text: rec.deckListText,
-                                    parsed: parseDeckListForDiff(rec.deckListText)
-                                };
+                                newDecks[rec.deckName] = { text: rec.deckListText, parsed: parseDeckListForDiff(rec.deckListText) };
                             }
                         });
-
                         setRecords(newRecords);
                         setDecks(newDecks);
                         saveToStorage(newRecords, newDecks);
                         alert(`インポート完了\n更新: ${updatedCount}件\n追加: ${addedCount}件`);
-
-                    } catch (err) {
-                        alert("Error parsing JSON file.");
-                        console.error(err);
-                    }
+                    } catch (err) { alert("Error parsing JSON file."); console.error(err); }
                     e.target.value = ''; 
                 };
                 reader.readAsText(file);
@@ -427,36 +401,21 @@
                     </header>
 
                     <main className="p-4">
-                        {/* === Home (Deck Selector) === */}
                         {view === 'list' && (
                             <div className="mb-8">
-                                {/* === Usage Guide (Collapsible) === */}
                                 <div className="bg-white rounded-xl shadow-sm border border-blue-100 p-4 mb-6">
-                                    <button 
-                                        onClick={() => setShowGuide(!showGuide)} 
-                                        className="w-full flex justify-between items-center text-slate-700 font-bold text-sm"
-                                    >
+                                    <button onClick={() => setShowGuide(!showGuide)} className="w-full flex justify-between items-center text-slate-700 font-bold text-sm">
                                         <div className="flex items-center gap-2">
                                             <div className="bg-blue-100 text-blue-600 p-1.5 rounded-full"><Icon name="help-circle" size={16}/></div>
                                             このアプリの使い方
                                         </div>
                                         <Icon name={showGuide ? "chevron-up" : "chevron-down"} size={16} className="text-slate-400"/>
                                     </button>
-                                    
                                     {showGuide && (
                                         <div className="mt-3 pt-3 border-t border-slate-100 text-xs leading-relaxed text-slate-600 space-y-2 animate-fade-in">
-                                            <div className="flex gap-2">
-                                                <span className="font-bold text-blue-600 whitespace-nowrap">Step 1</span>
-                                                <p>「New Deck」または既存のデッキを選択して、新しいイベント(大会や調整会)の記録を開始します。</p>
-                                            </div>
-                                            <div className="flex gap-2">
-                                                <span className="font-bold text-blue-600 whitespace-nowrap">Step 2</span>
-                                                <p>対戦相手のアーキタイプ、ゲームごとの勝敗・先手後手・メモを入力します。<br/>デッキリストを貼り付けると、画像のプレビューや前回リストとの差分(IN/OUT)が自動計算されます。</p>
-                                            </div>
-                                            <div className="flex gap-2">
-                                                <span className="font-bold text-blue-600 whitespace-nowrap">Step 3</span>
-                                                <p>保存すると履歴に追加されます。デッキごとの戦績確認や、JSONファイルへのバックアップ(Export/Import)が可能です。</p>
-                                            </div>
+                                            <div className="flex gap-2"><span className="font-bold text-blue-600 whitespace-nowrap">Step 1</span><p>「New Deck」または既存のデッキを選択して、新しいイベント(大会や調整会)の記録を開始します。</p></div>
+                                            <div className="flex gap-2"><span className="font-bold text-blue-600 whitespace-nowrap">Step 2</span><p>対戦相手のアーキタイプ、ゲームごとの勝敗・先手後手・メモを入力します。<br/>デッキリストを貼り付けると、画像のプレビューや前回リストとの差分(IN/OUT)が自動計算されます。</p></div>
+                                            <div className="flex gap-2"><span className="font-bold text-blue-600 whitespace-nowrap">Step 3</span><p>保存すると履歴に追加されます。リスト画面ではデッキごとの戦績確認や、JSONファイルへのバックアップ(Export/Import)が可能です。</p></div>
                                         </div>
                                     )}
                                 </div>
@@ -465,22 +424,40 @@
                                     <Icon name="play-circle" size={16} /> Start New Event
                                 </h2>
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
-                                    {Object.keys(decks).map(dName => (
-                                        <div key={dName} className="relative group">
-                                            <button onClick={() => startNewEvent(dName, decks[dName])}
-                                                className="w-full h-full bg-white border border-slate-200 p-3 rounded-xl shadow-sm hover:shadow-md hover:border-blue-300 hover:bg-blue-50 transition text-left group">
-                                                <div className="text-xs text-slate-400 mb-1">Use Deck:</div>
-                                                <div className="font-bold text-slate-800 text-sm truncate group-hover:text-blue-700 pr-6">{dName}</div>
-                                            </button>
-                                            <button onClick={(e) => exportDeckHistory(e, dName)} 
-                                                className="absolute top-2 right-2 text-slate-300 hover:text-blue-600 p-1 rounded-full hover:bg-blue-100 transition z-10"
-                                                title="Download History">
-                                                <Icon name="download" size={14} />
-                                            </button>
-                                        </div>
-                                    ))}
+                                    {Object.keys(decks).map(dName => {
+                                        // ★ Stats Display Logic
+                                        const stat = deckStats[dName] || { matchWins: 0, matchLosses: 0, matchDraws: 0, totalMatches: 0 };
+                                        const winRate = stat.totalMatches > 0 ? Math.round((stat.matchWins / (stat.matchWins + stat.matchLosses)) * 100) : 0;
+                                        const rateColor = winRate >= 60 ? 'text-orange-600' : winRate >= 50 ? 'text-blue-600' : 'text-slate-400';
+                                        
+                                        return (
+                                            <div key={dName} className="relative group">
+                                                <button onClick={() => startNewEvent(dName, decks[dName])}
+                                                    className="w-full h-full bg-white border border-slate-200 p-3 rounded-xl shadow-sm hover:shadow-md hover:border-blue-300 hover:bg-blue-50 transition text-left group flex flex-col justify-between min-h-[100px]">
+                                                    <div>
+                                                        <div className="text-xs text-slate-400 mb-1">Use Deck:</div>
+                                                        <div className="font-bold text-slate-800 text-sm truncate group-hover:text-blue-700 pr-4">{dName}</div>
+                                                    </div>
+                                                    <div className="mt-2 pt-2 border-t border-slate-100 flex justify-between items-end">
+                                                        <div className="text-[10px] text-slate-500 font-mono">
+                                                            {stat.matchWins}W-{stat.matchLosses}L
+                                                            {stat.matchDraws > 0 && `-${stat.matchDraws}D`}
+                                                        </div>
+                                                        <div className={`text-xs font-black ${rateColor}`}>
+                                                            {isNaN(winRate) ? '-' : `${winRate}%`}
+                                                        </div>
+                                                    </div>
+                                                </button>
+                                                <button onClick={(e) => exportDeckHistory(e, dName)} 
+                                                    className="absolute top-2 right-2 text-slate-300 hover:text-blue-600 p-1 rounded-full hover:bg-blue-100 transition z-10"
+                                                    title="Download History">
+                                                    <Icon name="download" size={14} />
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
                                     <button onClick={() => startNewEvent()}
-                                        className="bg-slate-200 border border-slate-300 border-dashed p-3 rounded-xl shadow-inner hover:bg-white hover:border-orange-400 hover:text-orange-600 transition flex flex-col items-center justify-center gap-1 text-slate-500 min-h-[80px]">
+                                        className="bg-slate-200 border border-slate-300 border-dashed p-3 rounded-xl shadow-inner hover:bg-white hover:border-orange-400 hover:text-orange-600 transition flex flex-col items-center justify-center gap-1 text-slate-500 min-h-[100px]">
                                         <Icon name="plus" size={24} />
                                         <span className="text-xs font-bold">New Deck</span>
                                     </button>
@@ -495,7 +472,6 @@
                             </div>
                         )}
 
-                        {/* === Entry Form (New / Edit) === */}
                         {view === 'new' && (
                             <div className="bg-white rounded-xl shadow-lg p-5 animate-fade-in space-y-6">
                                 <div className="flex justify-between items-center">
@@ -619,7 +595,6 @@
                             </div>
                         )}
 
-                        {/* === History List === */}
                         {view === 'list' && (
                             <div className="space-y-6">
                                 <h2 className="text-sm font-bold text-slate-500 uppercase border-t pt-6 mb-3 flex items-center gap-1">
