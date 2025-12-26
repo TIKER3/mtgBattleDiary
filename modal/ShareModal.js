@@ -1,9 +1,7 @@
-// ShareModal.js
-
 // Reactのフックなどをグローバルから取得
 const { useState, useEffect, useRef, useMemo } = React;
 
-// --- Icon Component (共通パーツとしてここに定義) ---
+// --- Icon Component (共通パーツ) ---
 const Icon = ({ name, size = 18, className = "" }) => {
     useEffect(() => {
         if (window.lucide) {
@@ -13,7 +11,7 @@ const Icon = ({ name, size = 18, className = "" }) => {
     return <i data-lucide={name} width={size} height={size} className={className}></i>;
 };
 
-// グローバルにIconを公開（index.html側でも使うため）
+// グローバルにIconを公開
 window.Icon = Icon;
 
 // --- Share Modal Component ---
@@ -76,12 +74,11 @@ const ShareModal = ({ record, onClose }) => {
                 alert("Web Share APIがサポートされていません。");
             }
         } catch (err) {
-            // キャンセル時もエラーとして飛んでくるため、ログだけ出す
+            // キャンセル時やエラー時
             console.error("Share failed or cancelled", err);
         } finally {
-            // シェア終了後(成功・キャンセル問わず)、モーダルを閉じる
+            // ★修正: シェア処理が終わってもモーダルを閉じない（キャンセル時の"空白画面"対策）
             setIsSharing(false);
-            onClose();
         }
     };
 
@@ -100,7 +97,8 @@ const ShareModal = ({ record, onClose }) => {
                 
                 <div className="p-6 bg-slate-200 overflow-auto flex-1 flex justify-center items-start">
                     <div ref={captureRef} className="w-[600px] min-w-[600px] bg-white p-8 rounded-xl shadow-lg text-slate-800 font-sans border border-slate-200 box-border">
-                        <div className="flex justify-between items-start mb-8">
+                        {/* Header: items-start -> items-center に変更して中央揃え */}
+                        <div className="flex justify-between items-center mb-8">
                             <div>
                                 <div className="flex items-center gap-3 text-slate-500 text-sm font-bold mb-2">
                                     <span className="flex items-center gap-1"><Icon name="calendar" size={16}/> {record.date}</span>
@@ -130,7 +128,8 @@ const ShareModal = ({ record, onClose }) => {
                                             const isWin = g.result === 'win';
                                             const isLoss = g.result === 'loss';
                                             return (
-                                                <div key={j} className="flex items-start gap-3 text-sm">
+                                                /* List Item: items-start -> items-center に変更して中央揃え */
+                                                <div key={j} className="flex items-center gap-3 text-sm">
                                                     <div className="flex flex-col gap-1 mt-0.5">
                                                         {g.onPlay !== null && (
                                                             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded text-center border ${g.onPlay ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
