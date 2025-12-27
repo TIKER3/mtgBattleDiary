@@ -102,6 +102,7 @@
             return deck;
         };
 
+        // 画像取得ロジックの強化版
         const fetchImagesSplitMainSide = async (deckListText) => {
             const lines = deckListText.split('\n').filter(l => l.trim() !== "");
             let rawCards = [];
@@ -142,26 +143,62 @@
             
             const promises = uniqueNames.map(async (cardName) => {
                 try {
-                    let res = await fetch(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(cardName)}`);
-                    let data = null;
+                    let imageUrl = null;
+                    let englishName = null;
 
+                    // 1. まず通常の名前検索 (曖昧検索)
+                    let res = await fetch(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(cardName)}`);
+                    
                     if (res.ok) {
-                        data = await res.json();
-                    } else {
+                        const data = await res.json();
+                        // 画像があれば採用
+                        if (data.image_uris?.small) {
+                            imageUrl = data.image_uris.small;
+                        } else if (data.card_faces?.[0]?.image_uris?.small) {
+                            imageUrl = data.card_faces[0].image_uris.small;
+                        }
+                        // 英語名を保持 (後のフォールバック用)
+                        englishName = data.name; 
+                    }
+
+                    // 2. 画像がまだない場合、日本語名としてSearch APIで検索を試みる
+                    if (!imageUrl) {
                         const searchRes = await fetch(`https://api.scryfall.com/cards/search?q=${encodeURIComponent(cardName)}`);
                         if (searchRes.ok) {
                             const searchResult = await searchRes.json();
                             if (searchResult.data && searchResult.data.length > 0) {
-                                data = searchResult.data[0];
+                                const data = searchResult.data[0];
+                                
+                                // ここで「英語名」を取得（これが日本語→英語変換に相当）
+                                englishName = data.name;
+                                
+                                // もしこのデータ自体が画像を持っていれば採用
+                                if (data.image_uris?.small) {
+                                    imageUrl = data.image_uris.small;
+                                } else if (data.card_faces?.[0]?.image_uris?.small) {
+                                    imageUrl = data.card_faces[0].image_uris.small;
+                                }
                             }
                         }
                     }
 
-                    if (data) {
-                        urlMap[cardName] = data.image_uris?.small || data.card_faces?.[0]?.image_uris?.small;
-                    } else {
-                        urlMap[cardName] = null;
+                    // 3. まだ画像がなく、かつ英語名が判明している場合
+                    // (日本語検索でヒットしたが日本語版画像がない場合など)
+                    // 取得した英語名を使って、再度英語版の画像を検索しに行く
+                    if (!imageUrl && englishName) {
+                        const enRes = await fetch(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(englishName)}`);
+                        if (enRes.ok) {
+                            const enData = await enRes.json();
+                            if (enData.image_uris?.small) {
+                                imageUrl = enData.image_uris.small;
+                            } else if (enData.card_faces?.[0]?.image_uris?.small) {
+                                imageUrl = enData.card_faces[0].image_uris.small;
+                            }
+                        }
                     }
+
+                    urlMap[cardName] = imageUrl;
+
                 } catch { 
                     urlMap[cardName] = null; 
                 }
