@@ -41,8 +41,14 @@
         const MTG_FORMATS = [
             "Standard", "Pioneer", "Modern", "Legacy", "Vintage", "Pauper", "Commander", "Limited", "Other"
         ];
+        
+        // データを保存するキーを v10 に更新
+        const STORAGE_KEY_RECORDS = 'mtg_records_v10';
+        const STORAGE_KEY_DECKS = 'mtg_decks_v10';
 
-        // --- Helper: Parse & Image Logic ---
+        // --- Helper: Utilities ---
+        const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2);
+
         const parseDeckListForDiff = (text) => {
             if (!text) return {};
             const lines = text.split('\n');
@@ -144,13 +150,14 @@
         const MtgDiaryApp = () => {
             const [view, setView] = useState('list');
             const [records, setRecords] = useState([]); 
-            const [decks, setDecks] = useState({});
+            const [decks, setDecks] = useState({}); // { [id]: { id, name, text, parsed, format } }
             const [showGuide, setShowGuide] = useState(false);
             const [shareRecord, setShareRecord] = useState(null);
 
             const initialForm = {
                 date: new Date().toISOString().split('T')[0],
                 location: '', 
+                deckId: null, // ID管理に変更
                 deckName: '',
                 format: 'Modern', 
                 matches: [ createNewMatchBlock(1) ],
@@ -167,11 +174,49 @@
             
             const fileInputRef = useRef(null);
 
+            // --- Initialization & Migration ---
             useEffect(() => {
-                const savedRecords = localStorage.getItem('mtg_records_v9');
-                const savedDecks = localStorage.getItem('mtg_decks_v9');
-                if (savedRecords) setRecords(JSON.parse(savedRecords));
-                if (savedDecks) setDecks(JSON.parse(savedDecks));
+                const savedRecords = localStorage.getItem(STORAGE_KEY_RECORDS);
+                const savedDecks = localStorage.getItem(STORAGE_KEY_DECKS);
+
+                if (savedRecords && savedDecks) {
+                    setRecords(JSON.parse(savedRecords));
+                    setDecks(JSON.parse(savedDecks));
+                } else {
+                    // Migration from v9 (Name-based) to v10 (ID-based)
+                    const v9Records = JSON.parse(localStorage.getItem('mtg_records_v9') || '[]');
+                    const v9Decks = JSON.parse(localStorage.getItem('mtg_decks_v9') || '{}');
+
+                    if (v9Records.length > 0 || Object.keys(v9Decks).length > 0) {
+                        const newDecks = {};
+                        const nameToIdMap = {};
+
+                        // Migrate Decks
+                        Object.keys(v9Decks).forEach(name => {
+                            const newId = generateId();
+                            newDecks[newId] = {
+                                id: newId,
+                                name: name,
+                                ...v9Decks[name]
+                            };
+                            nameToIdMap[name] = newId;
+                        });
+
+                        // Migrate Records
+                        const newRecords = v9Records.map(rec => ({
+                            ...rec,
+                            deckId: nameToIdMap[rec.deckName] || null // Link existing records to new IDs
+                        }));
+
+                        setRecords(newRecords);
+                        setDecks(newDecks);
+                        
+                        // Save immediately to v10
+                        localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(newRecords));
+                        localStorage.setItem(STORAGE_KEY_DECKS, JSON.stringify(newDecks));
+                    }
+                }
+
                 if (window.lucide) window.lucide.createIcons();
             }, []);
 
@@ -179,44 +224,50 @@
 
             const deckStats = useMemo(() => {
                 const stats = {};
-                Object.keys(decks).forEach(name => {
-                    stats[name] = { 
+                
+                // Initialize for all existing decks
+                Object.values(decks).forEach(deck => {
+                    stats[deck.id] = { 
+                        name: deck.name,
                         matchWins: 0, matchLosses: 0, matchDraws: 0, totalMatches: 0,
-                        format: decks[name].format || 'Unknown' 
+                        format: deck.format || 'Unknown' 
                     };
                 });
                 
+                // Aggregate from records
                 records.forEach(r => {
-                    const name = r.deckName;
-                    if (!stats[name]) stats[name] = { matchWins: 0, matchLosses: 0, matchDraws: 0, totalMatches: 0, format: r.format || 'Unknown' };
-                    
-                    r.matches.forEach(m => {
-                        if (m.matchResult === 'win') stats[name].matchWins++;
-                        else if (m.matchResult === 'loss') stats[name].matchLosses++;
-                        else if (m.matchResult === 'draw') stats[name].matchDraws++;
-                        
-                        if (m.matchResult) stats[name].totalMatches++;
-                    });
+                    const dId = r.deckId;
+                    // If record has a deckId that exists in decks
+                    if (dId && stats[dId]) {
+                        r.matches.forEach(m => {
+                            if (m.matchResult === 'win') stats[dId].matchWins++;
+                            else if (m.matchResult === 'loss') stats[dId].matchLosses++;
+                            else if (m.matchResult === 'draw') stats[dId].matchDraws++;
+                            
+                            if (m.matchResult) stats[dId].totalMatches++;
+                        });
+                    }
                 });
                 return stats;
             }, [records, decks]);
 
             const saveToStorage = (newRecords, newDecks) => {
-                localStorage.setItem('mtg_records_v9', JSON.stringify(newRecords));
-                localStorage.setItem('mtg_decks_v9', JSON.stringify(newDecks));
+                localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(newRecords));
+                localStorage.setItem(STORAGE_KEY_DECKS, JSON.stringify(newDecks));
             };
 
-            const startNewEvent = (deckName = '', existingDeckData = null) => {
+            const startNewEvent = (deckId = null, existingDeckData = null) => {
                 setFormData({
                     ...initialForm,
-                    deckName: deckName,
+                    deckId: deckId,
+                    deckName: existingDeckData ? existingDeckData.name : '',
                     deckListText: existingDeckData ? existingDeckData.text : '',
                     format: existingDeckData ? (existingDeckData.format || 'Modern') : 'Modern',
                     date: new Date().toISOString().split('T')[0]
                 });
                 setEditingId(null);
                 
-                if (existingDeckData) {
+                if (existingDeckData && existingDeckData.text) {
                     const parsed = parseDeckListForDiff(existingDeckData.text);
                     setParsedDeckForDiff(parsed);
                 } else {
@@ -231,6 +282,7 @@
                 setFormData(JSON.parse(JSON.stringify({
                     date: record.date,
                     location: record.location,
+                    deckId: record.deckId,
                     deckName: record.deckName,
                     format: record.format || 'Modern',
                     deckListText: record.deckListText,
@@ -249,14 +301,18 @@
             const handleDeckListChange = (text) => {
                 setFormData(prev => ({ ...prev, deckListText: text }));
                 if (editingId) return; 
+                
                 const currentParsed = parseDeckListForDiff(text);
                 setParsedDeckForDiff(currentParsed);
-                if (formData.deckName && decks[formData.deckName]) {
-                    calculateDiff(decks[formData.deckName].parsed, currentParsed);
+                
+                // Calculate diff against the currently selected deck (if any)
+                if (formData.deckId && decks[formData.deckId]) {
+                    calculateDiff(decks[formData.deckId].parsed, currentParsed);
                 }
             };
 
             const calculateDiff = (oldDeckParsed, newDeckParsed) => {
+                if (!oldDeckParsed) return;
                 const diff = { in: [], out: [] };
                 Object.keys(newDeckParsed).forEach(card => {
                     const diffCount = newDeckParsed[card] - (oldDeckParsed[card] || 0);
@@ -295,7 +351,7 @@
                 if (window.confirm("本当にこの記録を削除しますか？\n（この操作は取り消せません）")) {
                     const updatedRecords = records.filter(r => r.id !== editingId);
                     setRecords(updatedRecords);
-                    localStorage.setItem('mtg_records_v9', JSON.stringify(updatedRecords)); 
+                    localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(updatedRecords)); 
                     setView('list');
                 }
             };
@@ -314,10 +370,14 @@
                     return { ...m, matchResult, gWins, gLosses };
                 });
 
+                // Determine Deck ID (Use existing or generate new)
+                const targetDeckId = formData.deckId || generateId();
+
                 const recordData = {
                     date: formData.date,
                     location: formData.location,
-                    deckName: formData.deckName,
+                    deckId: targetDeckId,     // Link to Deck ID
+                    deckName: formData.deckName, // Snapshot of name
                     format: formData.format, 
                     deckListText: formData.deckListText,
                     matches: processedMatches,
@@ -332,9 +392,12 @@
                     updatedRecords = [{ ...recordData, id: Date.now() }, ...records];
                 }
 
+                // Update Deck Data (Upsert)
                 const updatedDecks = { 
                     ...decks, 
-                    [formData.deckName]: { 
+                    [targetDeckId]: {
+                        id: targetDeckId,
+                        name: formData.deckName,
                         parsed: parsedDeckForDiff, 
                         text: formData.deckListText,
                         format: formData.format 
@@ -352,9 +415,11 @@
                 setDeckImagesData({ main: [], side: [] });
             };
 
-            const exportDeckHistory = (e, deckName) => {
+            const exportDeckHistory = (e, deckId) => {
                 e.stopPropagation();
-                const targetRecords = records.filter(r => r.deckName === deckName);
+                const deckName = decks[deckId]?.name || "UnknownDeck";
+                // Export records linked to this Deck ID
+                const targetRecords = records.filter(r => r.deckId === deckId);
                 if (targetRecords.length === 0) {
                     alert("No records to export.");
                     return;
@@ -370,33 +435,31 @@
                 document.body.removeChild(link);
             };
 
-            const deleteDeck = (e, deckName) => {
+            const deleteDeck = (e, deckId) => {
                 e.stopPropagation();
+                const deckName = decks[deckId]?.name;
                 if(!window.confirm(`デッキ「${deckName}」をデッキリストから削除しますか？\n(過去の対戦履歴は保持されます)`)){
                     return;
                 }
                 const updatedDecks = { ...decks };
-                delete updatedDecks[deckName];
+                delete updatedDecks[deckId];
                 setDecks(updatedDecks);
-                localStorage.setItem('mtg_decks_v9', JSON.stringify(updatedDecks));
+                localStorage.setItem(STORAGE_KEY_DECKS, JSON.stringify(updatedDecks));
             };
 
-            const renameDeck = (e, oldName) => {
+            const renameDeck = (e, deckId) => {
                 e.stopPropagation();
-                const newName = window.prompt("新しいデッキ名を入力してください:\n(※注意: 過去の対戦履歴のデッキ名も全てこの名前に更新されます)", oldName);
+                const oldName = decks[deckId].name;
+                const newName = window.prompt("新しいデッキ名を入力してください:\n(※重複する名前も使用可能です)", oldName);
                 
                 if (!newName || newName === oldName) return;
-                if (decks[newName]) {
-                    alert(`「${newName}」は既に存在します。別の名前を指定してください。`);
-                    return;
-                }
 
                 const updatedDecks = { ...decks };
-                updatedDecks[newName] = updatedDecks[oldName]; 
-                delete updatedDecks[oldName]; 
+                updatedDecks[deckId] = { ...updatedDecks[deckId], name: newName };
 
+                // Update historical records for this deck to reflect the new name (optional, but consistent with user intent usually)
                 const updatedRecords = records.map(r => 
-                    r.deckName === oldName ? { ...r, deckName: newName } : r
+                    r.deckId === deckId ? { ...r, deckName: newName } : r
                 );
 
                 setDecks(updatedDecks);
@@ -414,24 +477,63 @@
                     try {
                         const importedRecords = JSON.parse(event.target.result);
                         if (!Array.isArray(importedRecords)) { alert("Invalid file format."); return; }
+                        
                         let newRecords = [...records];
                         let updatedCount = 0, addedCount = 0;
-                        importedRecords.forEach(impRec => {
-                            const idx = newRecords.findIndex(r => r.id === impRec.id);
-                            if (idx > -1) { newRecords[idx] = impRec; updatedCount++; } 
-                            else { newRecords.push(impRec); addedCount++; }
-                        });
-                        newRecords.sort((a, b) => b.id - a.id);
                         let newDecks = { ...decks };
-                        importedRecords.forEach(rec => {
-                            if (rec.deckName && !newDecks[rec.deckName] && rec.deckListText) {
-                                newDecks[rec.deckName] = { 
-                                    text: rec.deckListText, 
-                                    parsed: parseDeckListForDiff(rec.deckListText),
-                                    format: rec.format || 'Modern'
-                                };
+
+                        // When importing, we need to handle deck IDs.
+                        // Strategy: Treat imported decks as NEW decks to avoid ID collision, unless we can match by ID (unlikely if from another user).
+                        // However, to keep it simple and allow duplicates: Generate NEW IDs for imported contents.
+                        
+                        // But wait, the imported JSON is just an array of records.
+                        // We need to reconstruct decks from these records.
+                        
+                        const importMapOldIdToNewId = {};
+
+                        importedRecords.forEach(impRec => {
+                            // If this record has a deckId, map it to a new ID (once per old ID)
+                            // If it doesn't (old version export), generate ID based on name? No, treat as new.
+                            
+                            // Check if we already processed this record ID to avoid duplicates?
+                            const existingIdx = newRecords.findIndex(r => r.id === impRec.id);
+                            
+                            // For deck reconstruction:
+                            let targetDeckId = null;
+                            if (impRec.deckId && importMapOldIdToNewId[impRec.deckId]) {
+                                targetDeckId = importMapOldIdToNewId[impRec.deckId];
+                            } else {
+                                // Create a new Deck entry for this import
+                                // Note: This creates a new deck entry for EACH unique deckId in import
+                                // or simply for each record if deckId is missing.
+                                targetDeckId = generateId();
+                                if (impRec.deckId) importMapOldIdToNewId[impRec.deckId] = targetDeckId;
+                                
+                                // Register Deck
+                                if (impRec.deckName && impRec.deckListText) {
+                                    newDecks[targetDeckId] = {
+                                        id: targetDeckId,
+                                        name: impRec.deckName,
+                                        text: impRec.deckListText,
+                                        parsed: parseDeckListForDiff(impRec.deckListText),
+                                        format: impRec.format || 'Modern'
+                                    };
+                                }
+                            }
+
+                            const recordToSave = { ...impRec, deckId: targetDeckId };
+
+                            if (existingIdx > -1) { 
+                                newRecords[existingIdx] = recordToSave; 
+                                updatedCount++; 
+                            } else { 
+                                newRecords.push(recordToSave); 
+                                addedCount++; 
                             }
                         });
+
+                        newRecords.sort((a, b) => b.id - a.id);
+                        
                         setRecords(newRecords);
                         setDecks(newDecks);
                         saveToStorage(newRecords, newDecks);
@@ -475,22 +577,22 @@
                                     <Icon name="layers" size={16} /> Start New Deck
                                 </h2>
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
-                                    {Object.keys(decks).map(dName => {
-                                        const stat = deckStats[dName] || { matchWins: 0, matchLosses: 0, matchDraws: 0, totalMatches: 0, format: 'Unknown' };
+                                    {Object.values(decks).map(deck => {
+                                        const dId = deck.id;
+                                        const dName = deck.name;
+                                        const stat = deckStats[dId] || { matchWins: 0, matchLosses: 0, matchDraws: 0, totalMatches: 0, format: 'Unknown' };
                                         const winRate = stat.totalMatches > 0 ? Math.round((stat.matchWins / (stat.matchWins + stat.matchLosses)) * 100) : 0;
                                         const rateColor = winRate >= 60 ? 'text-orange-600' : winRate >= 50 ? 'text-blue-600' : 'text-slate-400';
-                                        const deckFormat = decks[dName].format || 'Modern'; 
+                                        const deckFormat = deck.format || 'Modern'; 
 
                                         return (
-                                            <div key={dName} className="relative group">
-                                                <button onClick={() => startNewEvent(dName, decks[dName])}
+                                            <div key={dId} className="relative group">
+                                                <button onClick={() => startNewEvent(dId, deck)}
                                                     className="w-full h-full bg-white border border-slate-200 p-3 rounded-xl shadow-sm hover:shadow-md hover:border-blue-300 hover:bg-blue-50 transition text-left group flex flex-col justify-between min-h-[100px]">
                                                     <div>
                                                         <div className="flex items-center gap-2 mb-1">
-                                                            {/* ラベルを削除しフォーマットのみ表示 */}
                                                             <div className="text-[9px] uppercase font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 leading-none">{deckFormat}</div>
                                                         </div>
-                                                        {/* 右側に余白(pr-12)を設けてアイコンとの重なりを防止 */}
                                                         <div className="font-bold text-slate-800 text-sm truncate group-hover:text-blue-700 pr-12">{dName}</div>
                                                     </div>
                                                     <div className="mt-2 pt-2 border-t border-slate-100 flex justify-between items-end">
@@ -505,17 +607,17 @@
                                                 </button>
                                                 
                                                 <div className="absolute top-2 right-2 flex gap-1 z-10">
-                                                    <button onClick={(e) => renameDeck(e, dName)} 
+                                                    <button onClick={(e) => renameDeck(e, dId)} 
                                                         className="text-slate-300 hover:text-blue-600 p-1 rounded hover:bg-blue-100 transition"
-                                                        title="Rename Deck (履歴も更新されます)">
+                                                        title="Rename Deck">
                                                         <Icon name="pencil" size={12} />
                                                     </button>
-                                                    <button onClick={(e) => deleteDeck(e, dName)} 
+                                                    <button onClick={(e) => deleteDeck(e, dId)} 
                                                         className="text-slate-300 hover:text-red-600 p-1 rounded hover:bg-red-100 transition"
                                                         title="Remove from List">
                                                         <Icon name="trash-2" size={12} />
                                                     </button>
-                                                    <button onClick={(e) => exportDeckHistory(e, dName)} 
+                                                    <button onClick={(e) => exportDeckHistory(e, dId)} 
                                                         className="text-slate-300 hover:text-green-600 p-1 rounded hover:bg-green-100 transition"
                                                         title="Download History">
                                                         <Icon name="download" size={12} />
