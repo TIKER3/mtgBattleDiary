@@ -569,7 +569,7 @@
                                     </button>
                                     {showGuide && (
                                         <div className="mt-3 pt-3 border-t border-slate-100 text-xs leading-relaxed text-slate-600 space-y-2 animate-fade-in">
-                                            <div className="flex gap-2"><span className="font-bold text-blue-600 whitespace-nowrap">Step 1</span><p>「Start New Deck」からデッキを選択または新規作成し、イベントの記録を開始します。</p></div>
+                                            <div className="flex gap-2"><span className="font-bold text-blue-600 whitespace-nowrap">Step 1</span><p>「Select Deck」からデッキを選択または新規作成し、イベントの記録を開始します。</p></div>
                                             <div className="flex gap-2"><span className="font-bold text-blue-600 whitespace-nowrap">Step 2</span><p>対戦相手のアーキタイプ、ゲームごとの勝敗・先手後手・メモを入力します。<br/>デッキリストを貼り付けると、画像のプレビューや前回リストとの差分(IN/OUT)が自動計算されます。</p></div>
                                             <div className="flex gap-2"><span className="font-bold text-blue-600 whitespace-nowrap">Step 3</span><p>保存すると履歴に追加されます。リスト画面ではデッキごとの戦績確認や、名前の変更、リストからの削除が可能です。</p></div>
                                         </div>
@@ -577,7 +577,7 @@
                                 </div>
 
                                 <h2 className="text-sm font-bold text-slate-500 uppercase mb-3 flex items-center gap-1">
-                                    <Icon name="layers" size={16} /> Start New Deck
+                                    <Icon name="layers" size={16} /> Select Deck
                                 </h2>
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
                                     {Object.values(decks).map(deck => {
@@ -943,3 +943,4 @@
     </script>
 </body>
 </html>
+
