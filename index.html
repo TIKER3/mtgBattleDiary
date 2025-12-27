@@ -486,9 +486,8 @@
                                                 <button onClick={() => startNewEvent(dName, decks[dName])}
                                                     className="w-full h-full bg-white border border-slate-200 p-3 rounded-xl shadow-sm hover:shadow-md hover:border-blue-300 hover:bg-blue-50 transition text-left group flex flex-col justify-between min-h-[100px]">
                                                     <div>
-                                                        {/* ★修正: フォーマット表示を左寄せ・Use Deckの隣に変更して右上のアイコンと被らないようにする */}
                                                         <div className="flex items-center gap-2 mb-1">
-                                                            <div className="text-[10px] text-slate-400">Use Deck:</div>
+                                                            {/* ラベルを削除しフォーマットのみ表示 */}
                                                             <div className="text-[9px] uppercase font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 leading-none">{deckFormat}</div>
                                                         </div>
                                                         {/* 右側に余白(pr-12)を設けてアイコンとの重なりを防止 */}
