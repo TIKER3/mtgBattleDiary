@@ -102,7 +102,6 @@
             return deck;
         };
 
-        // 修正箇所: 画像取得ロジックの改善
         const fetchImagesSplitMainSide = async (deckListText) => {
             const lines = deckListText.split('\n').filter(l => l.trim() !== "");
             let rawCards = [];
@@ -141,21 +140,17 @@
             const uniqueNames = [...new Set([...mainList, ...sideList].map(c => c.name))];
             const urlMap = {};
             
-            // 並列で画像を取得
             const promises = uniqueNames.map(async (cardName) => {
                 try {
-                    // 1. まず通常の名前検索 (英語名に強い)
                     let res = await fetch(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(cardName)}`);
                     let data = null;
 
                     if (res.ok) {
                         data = await res.json();
                     } else {
-                        // 2. 失敗したらSearch APIを試す (日本語名対応)
                         const searchRes = await fetch(`https://api.scryfall.com/cards/search?q=${encodeURIComponent(cardName)}`);
                         if (searchRes.ok) {
                             const searchResult = await searchRes.json();
-                            // 検索結果の1件目を採用
                             if (searchResult.data && searchResult.data.length > 0) {
                                 data = searchResult.data[0];
                             }
@@ -217,7 +212,6 @@
             const [showGuide, setShowGuide] = useState(false);
             const [shareRecord, setShareRecord] = useState(null);
 
-            // Rename Modal State
             const [renamingDeckId, setRenamingDeckId] = useState(null);
 
             const initialForm = {
@@ -240,7 +234,6 @@
             
             const fileInputRef = useRef(null);
 
-            // --- Initialization & Migration ---
             useEffect(() => {
                 const savedRecords = localStorage.getItem(STORAGE_KEY_RECORDS);
                 const savedDecks = localStorage.getItem(STORAGE_KEY_DECKS);
@@ -488,13 +481,11 @@
                 localStorage.setItem(STORAGE_KEY_DECKS, JSON.stringify(updatedDecks));
             };
 
-            // Trigger Custom Rename Modal
             const openRenameModal = (e, deckId) => {
                 e.stopPropagation();
                 setRenamingDeckId(deckId);
             };
 
-            // Perform Rename logic
             const handleRenameSave = (newName) => {
                 if (!renamingDeckId || !decks[renamingDeckId]) return;
                 
@@ -514,7 +505,6 @@
                 setRecords(updatedRecords);
                 saveToStorage(updatedRecords, updatedDecks);
                 
-                // Close modal
                 setRenamingDeckId(null);
             };
 
@@ -765,7 +755,19 @@
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <textarea className="w-full h-24 bg-slate-900 text-green-400 text-xs font-mono p-2 rounded focus:outline-none"
-                                            value={formData.deckListText} onChange={(e) => handleDeckListChange(e.target.value)} placeholder="Paste decklist here..." />
+                                            value={formData.deckListText} onChange={(e) => handleDeckListChange(e.target.value)} 
+                                            placeholder={`例:
+Deck
+4 Monastery Swiftspear
+4 Soul-Scar Mage
+...
+18 Mountain
+
+Sideboard
+3 Rending Volley
+...
+(日本語名やArenaエクスポート形式に対応)`}
+                                        />
                                         <div className="h-24 overflow-y-auto border rounded p-2 text-xs bg-white">
                                             {deckDiff ? (
                                                 <div className="space-y-1">
