@@ -1,5 +1,3 @@
-// modal/ShareModal.js
-
 // Reactのフックなどをグローバルから取得
 const { useState, useEffect, useRef, useMemo } = React;
 
@@ -38,7 +36,6 @@ const ShareModal = ({ record, onClose }) => {
             backgroundColor: "#ffffff",
             useCORS: true,
             logging: false,
-            // ★修正: 全体を描画させるためのサイズ指定
             width: scrollWidth,
             height: scrollHeight,
             windowWidth: scrollWidth,
@@ -63,7 +60,7 @@ const ShareModal = ({ record, onClose }) => {
     // スマホ専用: Web Share APIで画像付きシェア
     const shareToX = async () => {
         setIsSharing(true);
-        const text = `MTG Result: ${record.deckName}\n${record.eventWins}-${record.eventLosses}\n#MTG #MTGBattleDiary`;
+        const text = `MTG Result: ${record.deckName} (${record.format || 'Modern'})\n${record.eventWins}-${record.eventLosses}\n#MTG #MTGBattleDiary`;
         
         try {
             const canvas = await captureImage();
@@ -112,82 +109,6 @@ const ShareModal = ({ record, onClose }) => {
                             <div className="flex flex-col justify-between">
                                 <div className="flex items-center gap-3 text-slate-500 text-sm font-bold">
                                     <span className="flex items-center gap-1 h-6"><Icon name="calendar" size={16}/> {record.date}</span>
+                                    {/* フォーマット表示を追加 */}
+                                    <span className="bg-slate-800 text-white px-2 rounded-full flex items-center gap-1 h-6 uppercase text-xs">{record.format || 'Format?'}</span>
                                     {record.location && <span className="bg-slate-100 px-2 rounded-full flex items-center gap-1 border border-slate-200 h-6"><Icon name="map-pin" size={14}/> {record.location}</span>}
-                                </div>
-                                <h1 className="text-4xl font-black text-slate-900 flex items-end leading-none pb-1">{record.deckName}</h1>
-                            </div>
-                            <div className={`text-5xl font-black px-6 rounded-xl border-4 ${scoreColor} h-full flex items-center justify-center leading-none ml-4`}>
-                                {record.eventWins}-{record.eventLosses}
-                            </div>
-                        </div>
-
-                        {/* Matches List */}
-                        <div className="space-y-4">
-                            {record.matches.map((match, i) => (
-                                <div key={i} className="border-2 border-slate-100 rounded-xl overflow-hidden">
-                                    {/* Match Header */}
-                                    <div className="bg-slate-50 border-b border-slate-100 px-5 py-3 flex justify-between items-center h-14">
-                                        <div className="flex items-center gap-3 h-full">
-                                            <span className="bg-slate-800 text-white text-sm font-bold px-2.5 rounded h-7 flex items-center justify-center leading-none">R{match.id}</span>
-                                            <span className="font-bold text-xl text-slate-700 h-full flex items-center leading-none">{match.opponentDeck || "Unknown Deck"}</span>
-                                        </div>
-                                        <span className={`text-lg font-black uppercase h-full flex items-center leading-none ${match.matchResult === 'win' ? 'text-blue-600' : match.matchResult === 'loss' ? 'text-red-600' : 'text-slate-400'}`}>
-                                            {match.matchResult === 'win' ? 'WIN' : match.matchResult === 'loss' ? 'LOSS' : 'DRAW'}
-                                        </span>
-                                    </div>
-                                    
-                                    <div className="bg-white p-4 space-y-2">
-                                        {match.games.map((g, j) => {
-                                            if (!g.result && !g.memo && g.onPlay === null) return null;
-                                            const isWin = g.result === 'win';
-                                            const isLoss = g.result === 'loss';
-                                            return (
-                                                <div key={j} className="flex items-center gap-3 text-sm h-8">
-                                                    <div className="flex items-center justify-center w-8 h-6">
-                                                        {g.onPlay !== null && (
-                                                            <span className={`text-[10px] font-bold px-1.5 rounded-sm text-center border w-full h-full flex items-center justify-center leading-none ${g.onPlay ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
-                                                                {g.onPlay ? '先' : '後'}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <span className={`font-black font-mono w-6 h-6 text-center text-base flex justify-center items-center leading-none ${isWin ? 'text-blue-600' : isLoss ? 'text-red-600' : 'text-slate-300'}`}>
-                                                        {isWin ? 'W' : isLoss ? 'L' : '-'}
-                                                    </span>
-                                                    <span className="text-slate-600 flex-1 border-b border-slate-50 h-full flex items-center text-sm truncate leading-none">
-                                                        {g.memo || <span className="text-slate-300 italic text-xs">No memo</span>}
-                                                    </span>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                        <div className="mt-8 pt-4 border-t border-slate-100 text-right text-slate-400 text-xs font-bold flex justify-end items-center gap-1 uppercase h-8 leading-none">
-                            <Icon name="pen-tool" size={12}/> MTG Battle Diary
-                        </div>
-                    </div>
-                </div>
-
-                <div className="p-4 bg-white border-t space-y-3 shrink-0">
-                    <button onClick={downloadImage} className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-lg shadow flex items-center justify-center gap-2 transition">
-                        <Icon name="download" /> 画像を保存
-                    </button>
-                    
-                    {isMobile ? (
-                        <button onClick={shareToX} disabled={isSharing} className="w-full bg-[#1DA1F2] hover:bg-[#1a91da] text-white font-bold py-3 rounded-lg shadow flex items-center justify-center gap-2 transition disabled:opacity-50">
-                            {isSharing ? "準備中..." : <><Icon name="twitter" /> Xでシェア (画像付き)</>}
-                        </button>
-                    ) : (
-                        <p className="text-center text-[10px] text-slate-400">
-                            ※ PCでは画像を保存し、X等へ手動で投稿してください。
-                        </p>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-};
-
-// グローバルにShareModalを公開
-window.ShareModal = ShareModal;
