@@ -30,11 +30,14 @@
     <div id="root"></div>
 
     <script type="text/babel" src="./modal/ShareModal.js"></script>
+    <script type="text/babel" src="./modal/RenameModal.js"></script>
 
     <script type="text/babel">
         const { useState, useEffect, useRef, useMemo } = React;
 
+        // グローバルコンポーネントの取得
         const ShareModal = window.ShareModal;
+        const RenameModal = window.RenameModal;
         const Icon = window.Icon; 
 
         // --- Constants ---
@@ -42,7 +45,6 @@
             "Standard", "Pioneer", "Modern", "Legacy", "Vintage", "Pauper", "Commander", "Limited", "Other"
         ];
         
-        // データを保存するキーを v10 に更新
         const STORAGE_KEY_RECORDS = 'mtg_records_v10';
         const STORAGE_KEY_DECKS = 'mtg_decks_v10';
 
@@ -150,14 +152,18 @@
         const MtgDiaryApp = () => {
             const [view, setView] = useState('list');
             const [records, setRecords] = useState([]); 
-            const [decks, setDecks] = useState({}); // { [id]: { id, name, text, parsed, format } }
+            const [decks, setDecks] = useState({}); 
             const [showGuide, setShowGuide] = useState(false);
             const [shareRecord, setShareRecord] = useState(null);
+
+            // Rename Modal State
+            const [renamingDeckId, setRenamingDeckId] = useState(null);
+            // renameValueはRenameModal内で管理するためAppからは削除
 
             const initialForm = {
                 date: new Date().toISOString().split('T')[0],
                 location: '', 
-                deckId: null, // ID管理に変更
+                deckId: null, 
                 deckName: '',
                 format: 'Modern', 
                 matches: [ createNewMatchBlock(1) ],
@@ -183,49 +189,34 @@
                     setRecords(JSON.parse(savedRecords));
                     setDecks(JSON.parse(savedDecks));
                 } else {
-                    // Migration from v9 (Name-based) to v10 (ID-based)
                     const v9Records = JSON.parse(localStorage.getItem('mtg_records_v9') || '[]');
                     const v9Decks = JSON.parse(localStorage.getItem('mtg_decks_v9') || '{}');
 
                     if (v9Records.length > 0 || Object.keys(v9Decks).length > 0) {
                         const newDecks = {};
                         const nameToIdMap = {};
-
-                        // Migrate Decks
                         Object.keys(v9Decks).forEach(name => {
                             const newId = generateId();
-                            newDecks[newId] = {
-                                id: newId,
-                                name: name,
-                                ...v9Decks[name]
-                            };
+                            newDecks[newId] = { id: newId, name: name, ...v9Decks[name] };
                             nameToIdMap[name] = newId;
                         });
-
-                        // Migrate Records
                         const newRecords = v9Records.map(rec => ({
                             ...rec,
-                            deckId: nameToIdMap[rec.deckName] || null // Link existing records to new IDs
+                            deckId: nameToIdMap[rec.deckName] || null
                         }));
-
                         setRecords(newRecords);
                         setDecks(newDecks);
-                        
-                        // Save immediately to v10
                         localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(newRecords));
                         localStorage.setItem(STORAGE_KEY_DECKS, JSON.stringify(newDecks));
                     }
                 }
-
                 if (window.lucide) window.lucide.createIcons();
             }, []);
 
-            useEffect(() => { if(window.lucide) window.lucide.createIcons(); }, [view, records, deckDiff, formData.matches.length, showGuide, shareRecord, decks]);
+            useEffect(() => { if(window.lucide) window.lucide.createIcons(); }, [view, records, deckDiff, formData.matches.length, showGuide, shareRecord, decks, renamingDeckId]);
 
             const deckStats = useMemo(() => {
                 const stats = {};
-                
-                // Initialize for all existing decks
                 Object.values(decks).forEach(deck => {
                     stats[deck.id] = { 
                         name: deck.name,
@@ -233,17 +224,13 @@
                         format: deck.format || 'Unknown' 
                     };
                 });
-                
-                // Aggregate from records
                 records.forEach(r => {
                     const dId = r.deckId;
-                    // If record has a deckId that exists in decks
                     if (dId && stats[dId]) {
                         r.matches.forEach(m => {
                             if (m.matchResult === 'win') stats[dId].matchWins++;
                             else if (m.matchResult === 'loss') stats[dId].matchLosses++;
                             else if (m.matchResult === 'draw') stats[dId].matchDraws++;
-                            
                             if (m.matchResult) stats[dId].totalMatches++;
                         });
                     }
@@ -301,11 +288,8 @@
             const handleDeckListChange = (text) => {
                 setFormData(prev => ({ ...prev, deckListText: text }));
                 if (editingId) return; 
-                
                 const currentParsed = parseDeckListForDiff(text);
                 setParsedDeckForDiff(currentParsed);
-                
-                // Calculate diff against the currently selected deck (if any)
                 if (formData.deckId && decks[formData.deckId]) {
                     calculateDiff(decks[formData.deckId].parsed, currentParsed);
                 }
@@ -370,14 +354,13 @@
                     return { ...m, matchResult, gWins, gLosses };
                 });
 
-                // Determine Deck ID (Use existing or generate new)
                 const targetDeckId = formData.deckId || generateId();
 
                 const recordData = {
                     date: formData.date,
                     location: formData.location,
-                    deckId: targetDeckId,     // Link to Deck ID
-                    deckName: formData.deckName, // Snapshot of name
+                    deckId: targetDeckId,     
+                    deckName: formData.deckName, 
                     format: formData.format, 
                     deckListText: formData.deckListText,
                     matches: processedMatches,
@@ -392,7 +375,6 @@
                     updatedRecords = [{ ...recordData, id: Date.now() }, ...records];
                 }
 
-                // Update Deck Data (Upsert)
                 const updatedDecks = { 
                     ...decks, 
                     [targetDeckId]: {
@@ -418,7 +400,6 @@
             const exportDeckHistory = (e, deckId) => {
                 e.stopPropagation();
                 const deckName = decks[deckId]?.name || "UnknownDeck";
-                // Export records linked to this Deck ID
                 const targetRecords = records.filter(r => r.deckId === deckId);
                 if (targetRecords.length === 0) {
                     alert("No records to export.");
@@ -447,24 +428,34 @@
                 localStorage.setItem(STORAGE_KEY_DECKS, JSON.stringify(updatedDecks));
             };
 
-            const renameDeck = (e, deckId) => {
+            // Trigger Custom Rename Modal
+            const openRenameModal = (e, deckId) => {
                 e.stopPropagation();
-                const oldName = decks[deckId].name;
-                const newName = window.prompt("新しいデッキ名を入力してください:\n(※重複する名前も使用可能です)", oldName);
+                setRenamingDeckId(deckId);
+            };
+
+            // Perform Rename logic - 引数でnewNameを受け取る形に変更
+            const handleRenameSave = (newName) => {
+                if (!renamingDeckId || !decks[renamingDeckId]) return;
                 
-                if (!newName || newName === oldName) return;
+                if (!newName || !newName.trim()) {
+                    alert("デッキ名を入力してください");
+                    return;
+                }
 
                 const updatedDecks = { ...decks };
-                updatedDecks[deckId] = { ...updatedDecks[deckId], name: newName };
+                updatedDecks[renamingDeckId] = { ...updatedDecks[renamingDeckId], name: newName };
 
-                // Update historical records for this deck to reflect the new name (optional, but consistent with user intent usually)
                 const updatedRecords = records.map(r => 
-                    r.deckId === deckId ? { ...r, deckName: newName } : r
+                    r.deckId === renamingDeckId ? { ...r, deckName: newName } : r
                 );
 
                 setDecks(updatedDecks);
                 setRecords(updatedRecords);
                 saveToStorage(updatedRecords, updatedDecks);
+                
+                // Close modal
+                setRenamingDeckId(null);
             };
 
             const triggerImport = () => { fileInputRef.current.click(); };
@@ -481,35 +472,17 @@
                         let newRecords = [...records];
                         let updatedCount = 0, addedCount = 0;
                         let newDecks = { ...decks };
-
-                        // When importing, we need to handle deck IDs.
-                        // Strategy: Treat imported decks as NEW decks to avoid ID collision, unless we can match by ID (unlikely if from another user).
-                        // However, to keep it simple and allow duplicates: Generate NEW IDs for imported contents.
-                        
-                        // But wait, the imported JSON is just an array of records.
-                        // We need to reconstruct decks from these records.
-                        
                         const importMapOldIdToNewId = {};
 
                         importedRecords.forEach(impRec => {
-                            // If this record has a deckId, map it to a new ID (once per old ID)
-                            // If it doesn't (old version export), generate ID based on name? No, treat as new.
-                            
-                            // Check if we already processed this record ID to avoid duplicates?
                             const existingIdx = newRecords.findIndex(r => r.id === impRec.id);
-                            
-                            // For deck reconstruction:
                             let targetDeckId = null;
                             if (impRec.deckId && importMapOldIdToNewId[impRec.deckId]) {
                                 targetDeckId = importMapOldIdToNewId[impRec.deckId];
                             } else {
-                                // Create a new Deck entry for this import
-                                // Note: This creates a new deck entry for EACH unique deckId in import
-                                // or simply for each record if deckId is missing.
                                 targetDeckId = generateId();
                                 if (impRec.deckId) importMapOldIdToNewId[impRec.deckId] = targetDeckId;
                                 
-                                // Register Deck
                                 if (impRec.deckName && impRec.deckListText) {
                                     newDecks[targetDeckId] = {
                                         id: targetDeckId,
@@ -520,20 +493,12 @@
                                     };
                                 }
                             }
-
                             const recordToSave = { ...impRec, deckId: targetDeckId };
-
-                            if (existingIdx > -1) { 
-                                newRecords[existingIdx] = recordToSave; 
-                                updatedCount++; 
-                            } else { 
-                                newRecords.push(recordToSave); 
-                                addedCount++; 
-                            }
+                            if (existingIdx > -1) { newRecords[existingIdx] = recordToSave; updatedCount++; } 
+                            else { newRecords.push(recordToSave); addedCount++; }
                         });
 
                         newRecords.sort((a, b) => b.id - a.id);
-                        
                         setRecords(newRecords);
                         setDecks(newDecks);
                         saveToStorage(newRecords, newDecks);
@@ -607,7 +572,7 @@
                                                 </button>
                                                 
                                                 <div className="absolute top-2 right-2 flex gap-1 z-10">
-                                                    <button onClick={(e) => renameDeck(e, dId)} 
+                                                    <button onClick={(e) => openRenameModal(e, dId)} 
                                                         className="text-slate-300 hover:text-blue-600 p-1 rounded hover:bg-blue-100 transition"
                                                         title="Rename Deck">
                                                         <Icon name="pencil" size={12} />
@@ -797,6 +762,15 @@
                                 onClose={() => setShareRecord(null)} 
                             />
                         )}
+
+                        {/* Rename Modal */}
+                        {renamingDeckId && (
+                            <RenameModal
+                                currentName={decks[renamingDeckId]?.name || ""}
+                                onClose={() => setRenamingDeckId(null)}
+                                onSave={handleRenameSave}
+                            />
+                        )}
                     </main>
                 </div>
             );
@@ -832,7 +806,6 @@
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition relative">
                     <div className="p-4 cursor-pointer bg-gradient-to-r from-white to-slate-50 hover:bg-slate-50 transition" onClick={() => setExpanded(!expanded)}>
                         <div className="flex justify-between items-start">
-                            {/* 左側: 日付・デッキ名・差分情報 */}
                             <div className="pr-4">
                                 <div className="flex flex-wrap gap-2 text-xs text-slate-500 font-bold mb-1 items-center">
                                     <span className="flex items-center gap-1"><Icon name="calendar" size={12}/> {record.date}</span>
@@ -848,9 +821,7 @@
                                 )}
                             </div>
                             
-                            {/* 右側: ボタンと成績を縦に積む */}
                             <div className="flex flex-col items-end gap-3 shrink-0">
-                                {/* ボタン群 */}
                                 <div className="flex gap-2">
                                     <button 
                                         onClick={(e) => { e.stopPropagation(); onShare(); }}
@@ -867,7 +838,6 @@
                                         <Icon name="pencil" size={16} />
                                     </button>
                                 </div>
-                                {/* 成績バッジ */}
                                 <div className={`text-xl font-black px-3 py-1 rounded border ${scoreColor}`}>
                                     {record.eventWins}-{record.eventLosses}
                                 </div>
