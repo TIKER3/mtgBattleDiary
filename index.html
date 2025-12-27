@@ -38,6 +38,11 @@
         const ShareModal = window.ShareModal;
         const Icon = window.Icon; 
 
+        // --- Constants ---
+        const MTG_FORMATS = [
+            "Standard", "Pioneer", "Modern", "Legacy", "Vintage", "Pauper", "Commander", "Limited", "Other"
+        ];
+
         // --- Helper: Parse & Image Logic ---
         const parseDeckListForDiff = (text) => {
             if (!text) return {};
@@ -148,6 +153,7 @@
                 date: new Date().toISOString().split('T')[0],
                 location: '', 
                 deckName: '',
+                format: 'Modern', // Default format
                 matches: [ createNewMatchBlock(1) ],
                 deckListText: ''
             };
@@ -175,12 +181,15 @@
             const deckStats = useMemo(() => {
                 const stats = {};
                 Object.keys(decks).forEach(name => {
-                    stats[name] = { matchWins: 0, matchLosses: 0, matchDraws: 0, totalMatches: 0 };
+                    stats[name] = { 
+                        matchWins: 0, matchLosses: 0, matchDraws: 0, totalMatches: 0,
+                        format: decks[name].format || 'Unknown' 
+                    };
                 });
                 
                 records.forEach(r => {
                     const name = r.deckName;
-                    if (!stats[name]) stats[name] = { matchWins: 0, matchLosses: 0, matchDraws: 0, totalMatches: 0 };
+                    if (!stats[name]) stats[name] = { matchWins: 0, matchLosses: 0, matchDraws: 0, totalMatches: 0, format: r.format || 'Unknown' };
                     
                     r.matches.forEach(m => {
                         if (m.matchResult === 'win') stats[name].matchWins++;
@@ -203,6 +212,7 @@
                     ...initialForm,
                     deckName: deckName,
                     deckListText: existingDeckData ? existingDeckData.text : '',
+                    format: existingDeckData ? (existingDeckData.format || 'Modern') : 'Modern',
                     date: new Date().toISOString().split('T')[0]
                 });
                 setEditingId(null);
@@ -223,6 +233,7 @@
                     date: record.date,
                     location: record.location,
                     deckName: record.deckName,
+                    format: record.format || 'Modern',
                     deckListText: record.deckListText,
                     matches: record.matches
                 })));
@@ -308,6 +319,7 @@
                     date: formData.date,
                     location: formData.location,
                     deckName: formData.deckName,
+                    format: formData.format, // Save Format
                     deckListText: formData.deckListText,
                     matches: processedMatches,
                     eventWins, eventLosses, eventDraws,
@@ -323,7 +335,11 @@
 
                 const updatedDecks = { 
                     ...decks, 
-                    [formData.deckName]: { parsed: parsedDeckForDiff, text: formData.deckListText } 
+                    [formData.deckName]: { 
+                        parsed: parsedDeckForDiff, 
+                        text: formData.deckListText,
+                        format: formData.format // Save Format to Deck
+                    } 
                 };
 
                 setRecords(updatedRecords);
@@ -376,7 +392,11 @@
                         let newDecks = { ...decks };
                         importedRecords.forEach(rec => {
                             if (rec.deckName && !newDecks[rec.deckName] && rec.deckListText) {
-                                newDecks[rec.deckName] = { text: rec.deckListText, parsed: parseDeckListForDiff(rec.deckListText) };
+                                newDecks[rec.deckName] = { 
+                                    text: rec.deckListText, 
+                                    parsed: parseDeckListForDiff(rec.deckListText),
+                                    format: rec.format || 'Modern'
+                                };
                             }
                         });
                         setRecords(newRecords);
@@ -423,16 +443,20 @@
                                 </h2>
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
                                     {Object.keys(decks).map(dName => {
-                                        const stat = deckStats[dName] || { matchWins: 0, matchLosses: 0, matchDraws: 0, totalMatches: 0 };
+                                        const stat = deckStats[dName] || { matchWins: 0, matchLosses: 0, matchDraws: 0, totalMatches: 0, format: 'Unknown' };
                                         const winRate = stat.totalMatches > 0 ? Math.round((stat.matchWins / (stat.matchWins + stat.matchLosses)) * 100) : 0;
                                         const rateColor = winRate >= 60 ? 'text-orange-600' : winRate >= 50 ? 'text-blue-600' : 'text-slate-400';
-                                        
+                                        const deckFormat = decks[dName].format || 'Modern'; // Default
+
                                         return (
                                             <div key={dName} className="relative group">
                                                 <button onClick={() => startNewEvent(dName, decks[dName])}
                                                     className="w-full h-full bg-white border border-slate-200 p-3 rounded-xl shadow-sm hover:shadow-md hover:border-blue-300 hover:bg-blue-50 transition text-left group flex flex-col justify-between min-h-[100px]">
                                                     <div>
-                                                        <div className="text-xs text-slate-400 mb-1">Use Deck:</div>
+                                                        <div className="flex justify-between items-start">
+                                                            <div className="text-[10px] text-slate-400 mb-1">Use Deck:</div>
+                                                            <div className="text-[9px] uppercase font-bold text-slate-400 bg-slate-100 px-1 rounded">{deckFormat}</div>
+                                                        </div>
                                                         <div className="font-bold text-slate-800 text-sm truncate group-hover:text-blue-700 pr-4">{dName}</div>
                                                     </div>
                                                     <div className="mt-2 pt-2 border-t border-slate-100 flex justify-between items-end">
@@ -494,10 +518,19 @@
                                                 value={formData.location} onChange={(e) => setFormData({...formData, location: e.target.value})} />
                                         </div>
                                     </div>
-                                    <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">My Deck</label>
-                                        <input type="text" className="w-full bg-white border rounded p-2 text-sm font-bold text-slate-700" placeholder="デッキ名"
-                                            value={formData.deckName} onChange={(e) => setFormData({...formData, deckName: e.target.value})} />
+                                    <div className="flex gap-2">
+                                        <div className="w-1/3">
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Format</label>
+                                            <select className="w-full bg-white border rounded p-2 text-sm appearance-none"
+                                                value={formData.format} onChange={(e) => setFormData({...formData, format: e.target.value})}>
+                                                {MTG_FORMATS.map(fmt => <option key={fmt} value={fmt}>{fmt}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="w-2/3">
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">My Deck</label>
+                                            <input type="text" className="w-full bg-white border rounded p-2 text-sm font-bold text-slate-700" placeholder="デッキ名"
+                                                value={formData.deckName} onChange={(e) => setFormData({...formData, deckName: e.target.value})} />
+                                        </div>
                                     </div>
                                 </div>
 
@@ -654,6 +687,8 @@
                             <div className="pr-4">
                                 <div className="flex flex-wrap gap-2 text-xs text-slate-500 font-bold mb-1 items-center">
                                     <span className="flex items-center gap-1"><Icon name="calendar" size={12}/> {record.date}</span>
+                                    {/* フォーマットバッジ追加 */}
+                                    <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded text-[10px] font-bold uppercase">{record.format || 'MODERN'}</span>
                                     {record.location && <span className="flex items-center gap-1 bg-white border px-1.5 rounded"><Icon name="map-pin" size={12}/> {record.location}</span>}
                                 </div>
                                 <h3 className="font-bold text-lg text-slate-800 break-words">{record.deckName}</h3>
