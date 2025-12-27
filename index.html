@@ -153,7 +153,7 @@
                 date: new Date().toISOString().split('T')[0],
                 location: '', 
                 deckName: '',
-                format: 'Modern', // Default format
+                format: 'Modern', 
                 matches: [ createNewMatchBlock(1) ],
                 deckListText: ''
             };
@@ -176,7 +176,7 @@
                 if (window.lucide) window.lucide.createIcons();
             }, []);
 
-            useEffect(() => { if(window.lucide) window.lucide.createIcons(); }, [view, records, deckDiff, formData.matches.length, showGuide, shareRecord]);
+            useEffect(() => { if(window.lucide) window.lucide.createIcons(); }, [view, records, deckDiff, formData.matches.length, showGuide, shareRecord, decks]);
 
             const deckStats = useMemo(() => {
                 const stats = {};
@@ -189,6 +189,7 @@
                 
                 records.forEach(r => {
                     const name = r.deckName;
+                    // デッキリストに存在しないが履歴にある場合も考慮
                     if (!stats[name]) stats[name] = { matchWins: 0, matchLosses: 0, matchDraws: 0, totalMatches: 0, format: r.format || 'Unknown' };
                     
                     r.matches.forEach(m => {
@@ -319,7 +320,7 @@
                     date: formData.date,
                     location: formData.location,
                     deckName: formData.deckName,
-                    format: formData.format, // Save Format
+                    format: formData.format, 
                     deckListText: formData.deckListText,
                     matches: processedMatches,
                     eventWins, eventLosses, eventDraws,
@@ -338,7 +339,7 @@
                     [formData.deckName]: { 
                         parsed: parsedDeckForDiff, 
                         text: formData.deckListText,
-                        format: formData.format // Save Format to Deck
+                        format: formData.format 
                     } 
                 };
 
@@ -353,6 +354,9 @@
                 setDeckImagesData({ main: [], side: [] });
             };
 
+            // --- Deck Management Functions ---
+            
+            // 履歴データのエクスポート
             const exportDeckHistory = (e, deckName) => {
                 e.stopPropagation();
                 const targetRecords = records.filter(r => r.deckName === deckName);
@@ -369,6 +373,44 @@
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
+            };
+
+            // デッキの削除（リストから削除するが、履歴は残す）
+            const deleteDeck = (e, deckName) => {
+                e.stopPropagation();
+                if(!window.confirm(`デッキ「${deckName}」をデッキリストから削除しますか？\n(過去の対戦履歴は保持されます)`)){
+                    return;
+                }
+                const updatedDecks = { ...decks };
+                delete updatedDecks[deckName];
+                setDecks(updatedDecks);
+                localStorage.setItem('mtg_decks_v9', JSON.stringify(updatedDecks));
+            };
+
+            // デッキ名の変更（履歴も一括更新する）
+            const renameDeck = (e, oldName) => {
+                e.stopPropagation();
+                const newName = window.prompt("新しいデッキ名を入力してください:\n(※注意: 過去の対戦履歴のデッキ名も全てこの名前に更新されます)", oldName);
+                
+                if (!newName || newName === oldName) return;
+                if (decks[newName]) {
+                    alert(`「${newName}」は既に存在します。別の名前を指定してください。`);
+                    return;
+                }
+
+                // 1. Decksオブジェクトのキーを変更
+                const updatedDecks = { ...decks };
+                updatedDecks[newName] = updatedDecks[oldName]; // 内容をコピー
+                delete updatedDecks[oldName]; // 古いキーを削除
+
+                // 2. RecordsのdeckNameを一括置換
+                const updatedRecords = records.map(r => 
+                    r.deckName === oldName ? { ...r, deckName: newName } : r
+                );
+
+                setDecks(updatedDecks);
+                setRecords(updatedRecords);
+                saveToStorage(updatedRecords, updatedDecks);
             };
 
             const triggerImport = () => { fileInputRef.current.click(); };
@@ -431,22 +473,23 @@
                                     </button>
                                     {showGuide && (
                                         <div className="mt-3 pt-3 border-t border-slate-100 text-xs leading-relaxed text-slate-600 space-y-2 animate-fade-in">
-                                            <div className="flex gap-2"><span className="font-bold text-blue-600 whitespace-nowrap">Step 1</span><p>「New Deck」または既存のデッキを選択して、新しいイベント(大会や調整会)の記録を開始します。</p></div>
+                                            <div className="flex gap-2"><span className="font-bold text-blue-600 whitespace-nowrap">Step 1</span><p>「Start New Deck」からデッキを選択または新規作成し、イベントの記録を開始します。</p></div>
                                             <div className="flex gap-2"><span className="font-bold text-blue-600 whitespace-nowrap">Step 2</span><p>対戦相手のアーキタイプ、ゲームごとの勝敗・先手後手・メモを入力します。<br/>デッキリストを貼り付けると、画像のプレビューや前回リストとの差分(IN/OUT)が自動計算されます。</p></div>
-                                            <div className="flex gap-2"><span className="font-bold text-blue-600 whitespace-nowrap">Step 3</span><p>保存すると履歴に追加されます。リスト画面ではデッキごとの戦績確認や、JSONファイルへのバックアップ(Export/Import)が可能です。</p></div>
+                                            <div className="flex gap-2"><span className="font-bold text-blue-600 whitespace-nowrap">Step 3</span><p>保存すると履歴に追加されます。リスト画面ではデッキごとの戦績確認や、名前の変更、リストからの削除が可能です。</p></div>
                                         </div>
                                     )}
                                 </div>
 
+                                {/* ★修正: Start New Deckに変更 */}
                                 <h2 className="text-sm font-bold text-slate-500 uppercase mb-3 flex items-center gap-1">
-                                    <Icon name="play-circle" size={16} /> Start New Event
+                                    <Icon name="layers" size={16} /> Start New Deck
                                 </h2>
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
                                     {Object.keys(decks).map(dName => {
                                         const stat = deckStats[dName] || { matchWins: 0, matchLosses: 0, matchDraws: 0, totalMatches: 0, format: 'Unknown' };
                                         const winRate = stat.totalMatches > 0 ? Math.round((stat.matchWins / (stat.matchWins + stat.matchLosses)) * 100) : 0;
                                         const rateColor = winRate >= 60 ? 'text-orange-600' : winRate >= 50 ? 'text-blue-600' : 'text-slate-400';
-                                        const deckFormat = decks[dName].format || 'Modern'; // Default
+                                        const deckFormat = decks[dName].format || 'Modern'; 
 
                                         return (
                                             <div key={dName} className="relative group">
@@ -469,11 +512,25 @@
                                                         </div>
                                                     </div>
                                                 </button>
-                                                <button onClick={(e) => exportDeckHistory(e, dName)} 
-                                                    className="absolute top-2 right-2 text-slate-300 hover:text-blue-600 p-1 rounded-full hover:bg-blue-100 transition z-10"
-                                                    title="Download History">
-                                                    <Icon name="download" size={14} />
-                                                </button>
+                                                
+                                                {/* ★修正: デッキ管理用ボタン群 (削除、リネーム、エクスポート) */}
+                                                <div className="absolute top-2 right-2 flex gap-1 z-10">
+                                                    <button onClick={(e) => renameDeck(e, dName)} 
+                                                        className="text-slate-300 hover:text-blue-600 p-1 rounded hover:bg-blue-100 transition"
+                                                        title="Rename Deck (履歴も更新されます)">
+                                                        <Icon name="pencil" size={12} />
+                                                    </button>
+                                                    <button onClick={(e) => deleteDeck(e, dName)} 
+                                                        className="text-slate-300 hover:text-red-600 p-1 rounded hover:bg-red-100 transition"
+                                                        title="Remove from List">
+                                                        <Icon name="trash-2" size={12} />
+                                                    </button>
+                                                    <button onClick={(e) => exportDeckHistory(e, dName)} 
+                                                        className="text-slate-300 hover:text-green-600 p-1 rounded hover:bg-green-100 transition"
+                                                        title="Download History">
+                                                        <Icon name="download" size={12} />
+                                                    </button>
+                                                </div>
                                             </div>
                                         );
                                     })}
@@ -687,7 +744,6 @@
                             <div className="pr-4">
                                 <div className="flex flex-wrap gap-2 text-xs text-slate-500 font-bold mb-1 items-center">
                                     <span className="flex items-center gap-1"><Icon name="calendar" size={12}/> {record.date}</span>
-                                    {/* フォーマットバッジ追加 */}
                                     <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded text-[10px] font-bold uppercase">{record.format || 'MODERN'}</span>
                                     {record.location && <span className="flex items-center gap-1 bg-white border px-1.5 rounded"><Icon name="map-pin" size={12}/> {record.location}</span>}
                                 </div>
