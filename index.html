@@ -1,3 +1,7 @@
+{
+type: uploaded file
+fileName: index.html
+fullContent:
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -102,7 +106,7 @@
             return deck;
         };
 
-        // 画像取得ロジックの強化版
+        // 画像取得ロジック
         const fetchImagesSplitMainSide = async (deckListText) => {
             const lines = deckListText.split('\n').filter(l => l.trim() !== "");
             let rawCards = [];
@@ -145,34 +149,25 @@
                 try {
                     let imageUrl = null;
                     let englishName = null;
-
-                    // 1. まず通常の名前検索 (曖昧検索)
                     let res = await fetch(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(cardName)}`);
                     
                     if (res.ok) {
                         const data = await res.json();
-                        // 画像があれば採用
                         if (data.image_uris?.small) {
                             imageUrl = data.image_uris.small;
                         } else if (data.card_faces?.[0]?.image_uris?.small) {
                             imageUrl = data.card_faces[0].image_uris.small;
                         }
-                        // 英語名を保持 (後のフォールバック用)
                         englishName = data.name; 
                     }
 
-                    // 2. 画像がまだない場合、日本語名としてSearch APIで検索を試みる
                     if (!imageUrl) {
                         const searchRes = await fetch(`https://api.scryfall.com/cards/search?q=${encodeURIComponent(cardName)}`);
                         if (searchRes.ok) {
                             const searchResult = await searchRes.json();
                             if (searchResult.data && searchResult.data.length > 0) {
                                 const data = searchResult.data[0];
-                                
-                                // ここで「英語名」を取得（これが日本語→英語変換に相当）
                                 englishName = data.name;
-                                
-                                // もしこのデータ自体が画像を持っていれば採用
                                 if (data.image_uris?.small) {
                                     imageUrl = data.image_uris.small;
                                 } else if (data.card_faces?.[0]?.image_uris?.small) {
@@ -182,9 +177,6 @@
                         }
                     }
 
-                    // 3. まだ画像がなく、かつ英語名が判明している場合
-                    // (日本語検索でヒットしたが日本語版画像がない場合など)
-                    // 取得した英語名を使って、再度英語版の画像を検索しに行く
                     if (!imageUrl && englishName) {
                         const enRes = await fetch(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(englishName)}`);
                         if (enRes.ok) {
@@ -196,7 +188,6 @@
                             }
                         }
                     }
-
                     urlMap[cardName] = imageUrl;
 
                 } catch { 
@@ -204,7 +195,6 @@
                 }
             });
             await Promise.all(promises);
-
             const attachUrl = (list) => list.map(c => ({ ...c, url: urlMap[c.name] })).filter(c => c.url);
             return { main: attachUrl(mainList), side: attachUrl(sideList) };
         };
@@ -247,9 +237,13 @@
             const [records, setRecords] = useState([]); 
             const [decks, setDecks] = useState({}); 
             const [showGuide, setShowGuide] = useState(false);
-            const [shareRecord, setShareRecord] = useState(null);
+            const [shareRecords, setShareRecords] = useState(null); // 配列を受け取るように変更
 
             const [renamingDeckId, setRenamingDeckId] = useState(null);
+
+            // 複数選択機能用のState
+            const [selectedRecordIds, setSelectedRecordIds] = useState([]);
+            const [isSelectionMode, setIsSelectionMode] = useState(false);
 
             const initialForm = {
                 date: new Date().toISOString().split('T')[0],
@@ -303,7 +297,7 @@
                 if (window.lucide) window.lucide.createIcons();
             }, []);
 
-            useEffect(() => { if(window.lucide) window.lucide.createIcons(); }, [view, records, deckDiff, formData.matches.length, showGuide, shareRecord, decks, renamingDeckId]);
+            useEffect(() => { if(window.lucide) window.lucide.createIcons(); }, [view, records, deckDiff, formData.matches.length, showGuide, shareRecords, decks, renamingDeckId, isSelectionMode, selectedRecordIds]);
 
             const deckStats = useMemo(() => {
                 const stats = {};
@@ -596,6 +590,31 @@
                 reader.readAsText(file);
             };
 
+            // 選択機能のハンドラー
+            const toggleSelectionMode = () => {
+                if (isSelectionMode) {
+                    setIsSelectionMode(false);
+                    setSelectedRecordIds([]);
+                } else {
+                    setIsSelectionMode(true);
+                }
+            };
+
+            const toggleRecordSelection = (e, id) => {
+                e.stopPropagation();
+                if (selectedRecordIds.includes(id)) {
+                    setSelectedRecordIds(selectedRecordIds.filter(sid => sid !== id));
+                } else {
+                    setSelectedRecordIds([...selectedRecordIds, id]);
+                }
+            };
+
+            const openShareModalWithSelection = () => {
+                if (selectedRecordIds.length === 0) return;
+                const selected = records.filter(r => selectedRecordIds.includes(r.id));
+                setShareRecords(selected);
+            };
+
             return (
                 <div className="max-w-3xl mx-auto min-h-screen bg-slate-100 shadow-xl overflow-hidden sm:border-x border-slate-200">
                     <header className="bg-slate-800 text-white p-4 sticky top-0 z-50 shadow-md flex justify-between items-center">
@@ -628,6 +647,7 @@
                                 <h2 className="text-sm font-bold text-slate-500 uppercase mb-3 flex items-center gap-1">
                                     {Icon && <Icon name="layers" size={16} />} Start New Deck
                                 </h2>
+                                {/* Deck List Grid ... (既存のコードと同じ) */}
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
                                     {Object.values(decks).map(deck => {
                                         const dId = deck.id;
@@ -695,6 +715,7 @@
                         )}
 
                         {view === 'new' && (
+                            /* New Event View (Existing Code) */
                             <div className="bg-white rounded-xl shadow-lg p-5 animate-fade-in space-y-6">
                                 <div className="flex justify-between items-center">
                                     <button onClick={() => setView('list')} className="text-slate-500 text-sm flex items-center gap-1 hover:text-slate-800">
@@ -796,14 +817,7 @@
                                             placeholder={`例:
 Deck
 4 Monastery Swiftspear
-4 Soul-Scar Mage
-...
-18 Mountain
-
-Sideboard
-3 Rending Volley
-...
-(日本語名やArenaエクスポート形式に対応)`}
+...`}
                                         />
                                         <div className="h-24 overflow-y-auto border rounded p-2 text-xs bg-white">
                                             {deckDiff ? (
@@ -840,25 +854,41 @@ Sideboard
 
                         {view === 'list' && (
                             <div className="space-y-6">
-                                <h2 className="text-sm font-bold text-slate-500 uppercase border-t pt-6 mb-3 flex items-center gap-1">
-                                    {Icon && <Icon name="history" size={16} />} History
-                                </h2>
+                                <div className="flex justify-between items-end border-t pt-6 mb-3">
+                                    <h2 className="text-sm font-bold text-slate-500 uppercase flex items-center gap-1">
+                                        {Icon && <Icon name="history" size={16} />} History
+                                    </h2>
+                                    <div className="flex items-center gap-2">
+                                        {isSelectionMode && selectedRecordIds.length > 0 && (
+                                            <button onClick={openShareModalWithSelection} className="text-xs bg-slate-800 text-white px-3 py-1.5 rounded-full font-bold shadow hover:bg-slate-700 transition animate-fade-in flex items-center gap-1">
+                                                {Icon && <Icon name="image" size={12}/>} 画像化 ({selectedRecordIds.length})
+                                            </button>
+                                        )}
+                                        <button onClick={toggleSelectionMode} className={`text-xs px-3 py-1.5 rounded-full font-bold transition flex items-center gap-1 ${isSelectionMode ? 'bg-blue-100 text-blue-700 border border-blue-200' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'}`}>
+                                            {Icon && <Icon name={isSelectionMode ? "check-square" : "square"} size={12}/>} {isSelectionMode ? "選択終了" : "複数選択"}
+                                        </button>
+                                    </div>
+                                </div>
+
                                 {records.length === 0 && <div className="text-center py-12 text-slate-400 bg-white rounded-xl shadow border border-dashed border-slate-300"><p>記録なし</p></div>}
                                 {records.map((record) => (
                                     <EventCard 
                                         key={record.id} 
                                         record={record} 
                                         onEdit={() => startEditEvent(record)}
-                                        onShare={() => setShareRecord(record)} 
+                                        onShare={() => setShareRecords([record])} 
+                                        isSelectionMode={isSelectionMode}
+                                        isSelected={selectedRecordIds.includes(record.id)}
+                                        onSelect={(e) => toggleRecordSelection(e, record.id)}
                                     />
                                 ))}
                             </div>
                         )}
                         
-                        {shareRecord && ShareModal && (
+                        {shareRecords && ShareModal && (
                             <ShareModal 
-                                record={shareRecord} 
-                                onClose={() => setShareRecord(null)} 
+                                records={shareRecords} 
+                                onClose={() => setShareRecords(null)} 
                             />
                         )}
 
@@ -875,7 +905,7 @@ Sideboard
             );
         };
 
-        const EventCard = ({ record, onEdit, onShare }) => { 
+        const EventCard = ({ record, onEdit, onShare, isSelectionMode, isSelected, onSelect }) => { 
             const [expanded, setExpanded] = useState(false);
             const [showDeckImages, setShowDeckImages] = useState(false);
             const [imagesData, setImagesData] = useState({ main: [], side: [] });
@@ -902,40 +932,53 @@ Sideboard
             };
 
             return (
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition relative">
-                    <div className="p-4 cursor-pointer bg-gradient-to-r from-white to-slate-50 hover:bg-slate-50 transition" onClick={() => setExpanded(!expanded)}>
+                <div className={`bg-white rounded-xl shadow-sm border overflow-hidden hover:shadow-md transition relative ${isSelected ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200'}`}>
+                    <div className="p-4 cursor-pointer bg-gradient-to-r from-white to-slate-50 hover:bg-slate-50 transition" onClick={(e) => { if(isSelectionMode) onSelect(e); else setExpanded(!expanded); }}>
                         <div className="flex justify-between items-start">
-                            <div className="pr-4">
-                                <div className="flex flex-wrap gap-2 text-xs text-slate-500 font-bold mb-1 items-center">
-                                    <span className="flex items-center gap-1">{Icon && <Icon name="calendar" size={12}/>} {record.date}</span>
-                                    <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded text-[10px] font-bold uppercase">{record.format || 'MODERN'}</span>
-                                    {record.location && <span className="flex items-center gap-1 bg-white border px-1.5 rounded">{Icon && <Icon name="map-pin" size={12}/>} {record.location}</span>}
-                                </div>
-                                <h3 className="font-bold text-lg text-slate-800 break-words">{record.deckName}</h3>
-                                {record.diffSnapshot && (
-                                    <div className="text-[10px] mt-1 flex flex-wrap gap-2">
-                                        {record.diffSnapshot.in.length > 0 && <span className="text-green-600 flex items-center gap-1">In: {record.diffSnapshot.in.map(c => `${c.count} ${c.name}`).join(", ")}</span>}
-                                        {record.diffSnapshot.out.length > 0 && <span className="text-red-500 flex items-center gap-1">Out: {record.diffSnapshot.out.map(c => `${c.count} ${c.name}`).join(", ")}</span>}
+                            <div className="flex gap-3 w-full">
+                                {isSelectionMode && (
+                                    <div className="flex items-center justify-center shrink-0 pt-1">
+                                        <div className={`w-5 h-5 rounded border flex items-center justify-center transition ${isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-slate-300 text-transparent'}`}>
+                                            {Icon && <Icon name="check" size={14} />}
+                                        </div>
                                     </div>
                                 )}
+                                <div className="pr-4 flex-1">
+                                    <div className="flex flex-wrap gap-2 text-xs text-slate-500 font-bold mb-1 items-center">
+                                        <span className="flex items-center gap-1">{Icon && <Icon name="calendar" size={12}/>} {record.date}</span>
+                                        <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded text-[10px] font-bold uppercase">{record.format || 'MODERN'}</span>
+                                        {record.location && <span className="flex items-center gap-1 bg-white border px-1.5 rounded">{Icon && <Icon name="map-pin" size={12}/>} {record.location}</span>}
+                                    </div>
+                                    <h3 className="font-bold text-lg text-slate-800 break-words">{record.deckName}</h3>
+                                    {record.diffSnapshot && (
+                                        <div className="text-[10px] mt-1 flex flex-wrap gap-2">
+                                            {record.diffSnapshot.in.length > 0 && <span className="text-green-600 flex items-center gap-1">In: {record.diffSnapshot.in.map(c => `${c.count} ${c.name}`).join(", ")}</span>}
+                                            {record.diffSnapshot.out.length > 0 && <span className="text-red-500 flex items-center gap-1">Out: {record.diffSnapshot.out.map(c => `${c.count} ${c.name}`).join(", ")}</span>}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                             
                             <div className="flex flex-col items-end gap-3 shrink-0">
                                 <div className="flex gap-2">
-                                    <button 
-                                        onClick={(e) => { e.stopPropagation(); onShare(); }}
-                                        className="text-slate-400 hover:text-blue-500 transition p-1.5 rounded-full hover:bg-blue-50 border border-transparent hover:border-blue-100"
-                                        title="Share Result"
-                                    >
-                                        {Icon && <Icon name="share-2" size={16} />}
-                                    </button>
-                                    <button 
-                                        onClick={(e) => { e.stopPropagation(); onEdit(); }}
-                                        className="text-slate-400 hover:text-blue-500 transition p-1.5 rounded-full hover:bg-blue-50 border border-transparent hover:border-blue-100"
-                                        title="Edit Record"
-                                    >
-                                        {Icon && <Icon name="pencil" size={16} />}
-                                    </button>
+                                    {!isSelectionMode && (
+                                        <>
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); onShare(); }}
+                                                className="text-slate-400 hover:text-blue-500 transition p-1.5 rounded-full hover:bg-blue-50 border border-transparent hover:border-blue-100"
+                                                title="Share Result"
+                                            >
+                                                {Icon && <Icon name="share-2" size={16} />}
+                                            </button>
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                                                className="text-slate-400 hover:text-blue-500 transition p-1.5 rounded-full hover:bg-blue-50 border border-transparent hover:border-blue-100"
+                                                title="Edit Record"
+                                            >
+                                                {Icon && <Icon name="pencil" size={16} />}
+                                            </button>
+                                        </>
+                                    )}
                                 </div>
                                 <div className={`text-xl font-black px-3 py-1 rounded border ${scoreColor}`}>
                                     {record.eventWins}-{record.eventLosses}
@@ -944,7 +987,7 @@ Sideboard
                         </div>
                     </div>
 
-                    {expanded && (
+                    {expanded && !isSelectionMode && (
                         <div className="border-t border-slate-100 animate-fade-in">
                             <div className="bg-slate-50/50 p-2 space-y-2">
                                 {record.matches.map((match) => (
@@ -1004,3 +1047,4 @@ Sideboard
     </script>
 </body>
 </html>
+}
