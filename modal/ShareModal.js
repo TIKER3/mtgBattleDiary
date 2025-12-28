@@ -122,7 +122,7 @@ const ShareModal = ({ records, onClose }) => {
                         <div className="bg-slate-50 border-b border-slate-100 px-4 py-2 flex justify-between items-center">
                             <div className="flex items-center gap-2">
                                 <span className="bg-slate-700 text-white text-xs font-bold px-2 py-0.5 rounded">R{match.id}</span>
-                                <span className="font-bold text-sm text-slate-700">{match.opponentDeck || "Unknown Deck"}</span>
+                                <span className="font-bold text-sm text-slate-700 pb-0.5">{match.opponentDeck || "Unknown Deck"}</span>
                             </div>
                             <span className={`text-sm font-black uppercase ${match.matchResult === 'win' ? 'text-blue-600' : match.matchResult === 'loss' ? 'text-red-600' : 'text-slate-400'}`}>
                                 {match.matchResult === 'win' ? 'WIN' : match.matchResult === 'loss' ? 'LOSS' : 'DRAW'}
@@ -147,7 +147,7 @@ const ShareModal = ({ records, onClose }) => {
                                         <span className={`font-black font-mono w-4 text-center ${isWin ? 'text-blue-600' : isLoss ? 'text-red-600' : 'text-slate-300'}`}>
                                             {isWin ? 'W' : isLoss ? 'L' : '-'}
                                         </span>
-                                        <span className="text-slate-600 flex-1 truncate">
+                                        <span className="text-slate-600 flex-1 truncate pb-0.5">
                                             {g.memo || <span className="text-slate-300 italic text-[10px]"></span>}
                                         </span>
                                     </div>
@@ -175,9 +175,11 @@ const ShareModal = ({ records, onClose }) => {
                             <span className="bg-slate-800 text-white px-2 rounded-full flex items-center gap-1 uppercase text-xs py-0.5">{record.format || 'Format?'}</span>
                             {record.location && <span className="bg-slate-100 px-2 rounded-full flex items-center gap-1 border border-slate-200 text-xs py-0.5"><Icon name="map-pin" size={14}/> {record.location}</span>}
                         </div>
-                        <h1 className="text-3xl font-black text-slate-900 leading-tight">{record.deckName}</h1>
+                        {/* 修正: leading-tight/none を leading-normal に変更し pb-1 を追加 */}
+                        <h1 className="text-3xl font-black text-slate-900 leading-normal pb-1">{record.deckName}</h1>
                     </div>
-                    <div className={`text-5xl font-black px-6 rounded-xl border-4 ${scoreColor} flex items-center justify-center ml-4 shrink-0`}>
+                    {/* 修正: padding を調整 */}
+                    <div className={`text-5xl font-black px-6 py-2 rounded-xl border-4 ${scoreColor} flex items-center justify-center ml-4 shrink-0`}>
                         {record.eventWins}-{record.eventLosses}
                     </div>
                 </div>
@@ -205,11 +207,11 @@ const ShareModal = ({ records, onClose }) => {
                         <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
                             <Icon name="layers" size={14}/> Battle History
                         </h2>
-                        <h1 className="text-3xl font-black text-slate-800 leading-none">Summary</h1>
+                        <h1 className="text-3xl font-black text-slate-800 leading-none pb-1">Summary</h1>
                     </div>
                     <div className="text-right">
                          <div className="text-sm font-bold text-slate-500 uppercase mb-1">Total Record</div>
-                         <div className="text-4xl font-black text-slate-800 leading-none">
+                         <div className="text-4xl font-black text-slate-800 leading-none pb-1">
                             <span className="text-blue-600">{totalWins}</span>
                             <span className="text-slate-300 mx-1">-</span>
                             <span className="text-red-600">{totalLosses}</span>
@@ -234,9 +236,11 @@ const ShareModal = ({ records, onClose }) => {
                                             <span className="bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded">{rec.format}</span>
                                             {rec.location && <span className="flex items-center gap-1"><Icon name="map-pin" size={12}/> {rec.location}</span>}
                                         </div>
-                                        <h3 className="text-xl font-bold text-slate-800 leading-tight">{rec.deckName}</h3>
+                                        {/* 修正: leading-tight を leading-normal に変更し pb-1 を追加 */}
+                                        <h3 className="text-xl font-bold text-slate-800 leading-normal pb-1">{rec.deckName}</h3>
                                     </div>
-                                    <div className={`text-2xl font-black px-4 py-1 rounded-lg border-2 ${scoreColor}`}>
+                                    {/* 修正: padding を調整 */}
+                                    <div className={`text-2xl font-black px-4 py-2 rounded-lg border-2 ${scoreColor}`}>
                                         {rec.eventWins}-{rec.eventLosses}
                                     </div>
                                 </div>
