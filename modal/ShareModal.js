@@ -1,7 +1,3 @@
-{
-type: uploaded file
-fileName: ShareModal.js
-fullContent:
 // Reactのフックなどをグローバルから取得
 const { useState, useEffect, useRef, useMemo } = React;
 
@@ -278,4 +274,3 @@ const ShareModal = ({ records, onClose }) => { // propを record から records(
 
 // グローバルにShareModalを公開
 window.ShareModal = ShareModal;
-}
