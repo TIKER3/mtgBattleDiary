@@ -41,7 +41,7 @@
         };
         window.Icon = Icon;
 
-        // --- ConfirmModal (新規追加: ブラウザ標準アラートの代替) ---
+        // --- ConfirmModal ---
         const ConfirmModal = ({ title, message, onClose, onConfirm, confirmText = "実行", confirmColor = "bg-red-600 hover:bg-red-700" }) => {
             return (
                 <div className="fixed inset-0 bg-black/60 z-[120] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
@@ -230,7 +230,7 @@
             const [showGuide, setShowGuide] = useState(false);
 
             const [renamingDeckId, setRenamingDeckId] = useState(null);
-            const [deletingDeckId, setDeletingDeckId] = useState(null); // 削除モーダル用State
+            const [deletingDeckId, setDeletingDeckId] = useState(null);
 
             // フィルター・ソート用のState
             const [sortOrder, setSortOrder] = useState('dateDesc'); 
@@ -545,13 +545,11 @@
                 document.body.removeChild(link);
             };
 
-            // デッキ削除のトリガー（window.confirmの代わりにStateセット）
             const deleteDeck = (e, deckId) => {
                 e.stopPropagation();
                 setDeletingDeckId(deckId);
             };
 
-            // デッキ削除の実行
             const handleConfirmDeleteDeck = () => {
                 if (!deletingDeckId) return;
                 const updatedDecks = { ...decks };
@@ -694,9 +692,22 @@
                                     )}
                                 </div>
 
-                                <h2 className="text-sm font-bold text-slate-500 uppercase mb-3 flex items-center gap-1">
-                                    <Icon name="layers" size={16} /> Start New Deck
-                                </h2>
+                                <div className="flex flex-col sm:flex-row justify-between items-end mb-3 gap-2">
+                                    <h2 className="text-sm font-bold text-slate-500 uppercase flex items-center gap-1">
+                                        <Icon name="layers" size={16} /> Start New Deck
+                                    </h2>
+                                    <div className="flex items-center gap-2">
+                                        <input type="file" ref={fileInputRef} onChange={handleImportFile} className="hidden" accept=".json" />
+                                        <button onClick={handleExportAllData} className="text-xs font-bold text-slate-400 hover:text-slate-600 flex items-center gap-1 transition">
+                                            <Icon name="download" size={12} /> Backup
+                                        </button>
+                                        <span className="text-slate-300">|</span>
+                                        <button onClick={triggerImport} className="text-xs font-bold text-slate-400 hover:text-slate-600 flex items-center gap-1 transition">
+                                            <Icon name="upload" size={12} /> Import
+                                        </button>
+                                    </div>
+                                </div>
+
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
                                     {Object.values(decks).map(deck => {
                                         const dId = deck.id;
@@ -751,17 +762,6 @@
                                         className="bg-slate-200 border border-slate-300 border-dashed p-3 rounded-xl shadow-inner hover:bg-white hover:border-orange-400 hover:text-orange-600 transition flex flex-col items-center justify-center gap-1 text-slate-500 min-h-[100px]">
                                         <Icon name="plus" size={24} />
                                         <span className="text-xs font-bold">New Deck</span>
-                                    </button>
-                                </div>
-                                
-                                <div className="flex justify-end items-center mt-2 gap-2">
-                                    <input type="file" ref={fileInputRef} onChange={handleImportFile} className="hidden" accept=".json" />
-                                    <button onClick={handleExportAllData} className="text-xs font-bold text-slate-400 hover:text-slate-600 flex items-center gap-1">
-                                        <Icon name="download" size={12} /> 全データのバックアップ (Export)
-                                    </button>
-                                    <span className="text-slate-300">|</span>
-                                    <button onClick={triggerImport} className="text-xs font-bold text-slate-400 hover:text-slate-600 flex items-center gap-1">
-                                        <Icon name="upload" size={12} /> 履歴データの取り込み (Import)
                                     </button>
                                 </div>
                             </div>
