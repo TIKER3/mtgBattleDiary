@@ -41,6 +41,28 @@
         };
         window.Icon = Icon;
 
+        // --- ConfirmModal (新規追加: ブラウザ標準アラートの代替) ---
+        const ConfirmModal = ({ title, message, onClose, onConfirm, confirmText = "実行", confirmColor = "bg-red-600 hover:bg-red-700" }) => {
+            return (
+                <div className="fixed inset-0 bg-black/60 z-[120] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden">
+                        <div className="p-4 border-b bg-slate-50">
+                            <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                                <Icon name="alert-triangle" size={18} className="text-amber-500"/> {title}
+                            </h3>
+                        </div>
+                        <div className="p-6 text-sm text-slate-600 leading-relaxed whitespace-pre-wrap font-medium">
+                            {message}
+                        </div>
+                        <div className="p-4 border-t bg-slate-50 flex justify-end gap-2">
+                            <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-200 rounded transition font-bold">キャンセル</button>
+                            <button onClick={onConfirm} className={`px-4 py-2 text-sm text-white font-bold rounded transition shadow-sm ${confirmColor}`}>{confirmText}</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         // --- RenameModal ---
         const RenameModal = ({ currentName, onClose, onSave }) => {
             const [value, setValue] = useState(currentName);
@@ -106,7 +128,7 @@
             return deck;
         };
 
-        // 画像取得ロジック（日本語名対応削除版）
+        // 画像取得ロジック
         const fetchImagesSplitMainSide = async (deckListText) => {
             const lines = deckListText.split('\n').filter(l => l.trim() !== "");
             let rawCards = [];
@@ -208,14 +230,12 @@
             const [showGuide, setShowGuide] = useState(false);
 
             const [renamingDeckId, setRenamingDeckId] = useState(null);
+            const [deletingDeckId, setDeletingDeckId] = useState(null); // 削除モーダル用State
 
-            // 複数選択機能用のState
-            const [selectedRecordIds, setSelectedRecordIds] = useState([]);
-            const [isSelectionMode, setIsSelectionMode] = useState(false);
-            
             // フィルター・ソート用のState
             const [sortOrder, setSortOrder] = useState('dateDesc'); 
             const [filterFormat, setFilterFormat] = useState('All');
+            const [filterEventName, setFilterEventName] = useState('All');
 
             const initialForm = {
                 date: new Date().toISOString().split('T')[0],
@@ -246,33 +266,11 @@
                 if (savedRecords && savedDecks) {
                     setRecords(JSON.parse(savedRecords));
                     setDecks(JSON.parse(savedDecks));
-                } else {
-                    const v9Records = JSON.parse(localStorage.getItem('mtg_records_v9') || '[]');
-                    const v9Decks = JSON.parse(localStorage.getItem('mtg_decks_v9') || '{}');
-                    // v10もあれば取得
-                    const v10Records = JSON.parse(localStorage.getItem('mtg_records_v10') || '[]');
-                    const v10Decks = JSON.parse(localStorage.getItem('mtg_decks_v10') || '{}');
-
-                    const initRecords = v10Records.length > 0 ? v10Records : v9Records;
-                    const initDecks = Object.keys(v10Decks).length > 0 ? v10Decks : v9Decks;
-
-                    if (initRecords.length > 0 || Object.keys(initDecks).length > 0) {
-                        // 新規ユーザーやv9ユーザー向けのマイグレーション処理（簡易）
-                        let newDecks = { ...initDecks };
-                        if (Object.keys(initDecks).length === 0 && initRecords.length > 0) {
-                             // Deck情報がない場合の再構築ロジック等は省略
-                        }
-                        
-                        setRecords(initRecords);
-                        setDecks(newDecks);
-                        localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(initRecords));
-                        localStorage.setItem(STORAGE_KEY_DECKS, JSON.stringify(newDecks));
-                    }
                 }
                 if (window.lucide) window.lucide.createIcons();
             }, []);
 
-            useEffect(() => { if(window.lucide) window.lucide.createIcons(); }, [view, records, deckDiff, formData.matches.length, showGuide, decks, renamingDeckId, isSelectionMode, selectedRecordIds, sortOrder, filterFormat]);
+            useEffect(() => { if(window.lucide) window.lucide.createIcons(); }, [view, records, deckDiff, formData.matches.length, showGuide, decks, renamingDeckId, deletingDeckId, sortOrder, filterFormat, filterEventName]);
 
             const deckStats = useMemo(() => {
                 const stats = {};
@@ -297,12 +295,29 @@
                 return stats;
             }, [records, decks]);
 
+            // ユニークなLocationのリストを取得（入力補完用）
+            const uniqueLocations = useMemo(() => {
+                const locs = records.map(r => r.location).filter(l => l && l.trim() !== "");
+                return [...new Set(locs)].sort();
+            }, [records]);
+
+            // ユニークなEventNameのリストを取得（フィルター用）
+            const uniqueEventNames = useMemo(() => {
+                const names = records.map(r => r.eventName).filter(n => n && n.trim() !== "");
+                return [...new Set(names)].sort();
+            }, [records]);
+
             const filteredAndSortedRecords = useMemo(() => {
                 let processed = [...records];
 
-                // フィルター適用
+                // フォーマットでフィルター
                 if (filterFormat !== 'All') {
                     processed = processed.filter(r => r.format === filterFormat);
+                }
+
+                // イベント名でフィルター
+                if (filterEventName !== 'All') {
+                    processed = processed.filter(r => r.eventName === filterEventName);
                 }
 
                 // ソート適用
@@ -310,7 +325,6 @@
                     processed.sort((a, b) => {
                         const dateDiff = new Date(b.date) - new Date(a.date);
                         if (dateDiff !== 0) return dateDiff;
-                        // 日付が同じ場合は eventOrder の降順
                         const orderDiff = (b.eventOrder || 0) - (a.eventOrder || 0);
                         if (orderDiff !== 0) return orderDiff;
                         return b.id - a.id;
@@ -327,7 +341,7 @@
                     processed.sort((a, b) => a.deckName.localeCompare(b.deckName, 'ja'));
                 }
                 return processed;
-            }, [records, sortOrder, filterFormat]);
+            }, [records, sortOrder, filterFormat, filterEventName]);
 
             const saveToStorage = (newRecords, newDecks) => {
                 localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(newRecords));
@@ -531,16 +545,20 @@
                 document.body.removeChild(link);
             };
 
+            // デッキ削除のトリガー（window.confirmの代わりにStateセット）
             const deleteDeck = (e, deckId) => {
                 e.stopPropagation();
-                const deckName = decks[deckId]?.name;
-                if(!window.confirm(`デッキ「${deckName}」をデッキリストから削除しますか？\n(過去の対戦履歴は保持されます)`)){
-                    return;
-                }
+                setDeletingDeckId(deckId);
+            };
+
+            // デッキ削除の実行
+            const handleConfirmDeleteDeck = () => {
+                if (!deletingDeckId) return;
                 const updatedDecks = { ...decks };
-                delete updatedDecks[deckId];
+                delete updatedDecks[deletingDeckId];
                 setDecks(updatedDecks);
                 localStorage.setItem(STORAGE_KEY_DECKS, JSON.stringify(updatedDecks));
+                setDeletingDeckId(null);
             };
 
             const openRenameModal = (e, deckId) => {
@@ -584,34 +602,25 @@
                         let newDecks = { ...decks };
                         let updatedCount = 0, addedCount = 0, deckAddedCount = 0;
 
-                        // Case A: 全データバックアップ形式（オブジェクトかつdecks/recordsが存在）
                         if (!Array.isArray(json) && json.decks && json.records) {
                             if(!window.confirm(`全データのインポートを開始します。\nデッキ: ${Object.keys(json.decks).length}件, 履歴: ${json.records.length}件\n既存のデータに追加しますか？`)) {
                                 e.target.value = ''; 
                                 return; 
                             }
-
                             const importMapId = {};
-                            
-                            // 1. デッキを取り込み（ID衝突回避のため新規ID発行）
                             Object.values(json.decks).forEach(d => {
                                 const newId = generateId();
                                 importMapId[d.id] = newId;
                                 newDecks[newId] = { ...d, id: newId };
                                 deckAddedCount++;
                             });
-
-                            // 2. 履歴を取り込み（デッキIDを変換）
                             json.records.forEach(r => {
                                 const targetDeckId = importMapId[r.deckId] || r.deckId; 
-                                // IDも新規発行して完全に追加として扱う
                                 const recordToSave = { ...r, id: Date.now() + Math.random(), deckId: targetDeckId };
                                 newRecords.push(recordToSave);
                                 addedCount++;
                             });
-
                         } 
-                        // Case B: 従来の履歴配列のみ
                         else if (Array.isArray(json)) {
                             const importMapOldIdToNewId = {};
                             json.forEach(impRec => {
@@ -631,7 +640,7 @@
                                             parsed: parseDeckListForDiff(impRec.deckListText),
                                             format: impRec.format || 'Modern'
                                         };
-                                        deckAddedCount++; // 間接的に追加されたデッキ数
+                                        deckAddedCount++; 
                                     }
                                 }
                                 const recordToSave = { ...impRec, deckId: targetDeckId };
@@ -644,7 +653,6 @@
                             return;
                         }
 
-                        // 保存
                         newRecords.sort((a, b) => b.id - a.id);
                         setRecords(newRecords);
                         setDecks(newDecks);
@@ -655,39 +663,6 @@
                     e.target.value = ''; 
                 };
                 reader.readAsText(file);
-            };
-
-            const toggleSelectionMode = () => {
-                if (isSelectionMode) {
-                    setIsSelectionMode(false);
-                    setSelectedRecordIds([]);
-                } else {
-                    setIsSelectionMode(true);
-                }
-            };
-
-            const toggleRecordSelection = (e, id) => {
-                e.stopPropagation();
-                if (selectedRecordIds.includes(id)) {
-                    setSelectedRecordIds(selectedRecordIds.filter(sid => sid !== id));
-                } else {
-                    setSelectedRecordIds([...selectedRecordIds, id]);
-                }
-            };
-
-            // 複数選択時のJSONエクスポート
-            const handleMultiJsonExport = () => {
-                if (selectedRecordIds.length === 0) return;
-                const selected = records.filter(r => selectedRecordIds.includes(r.id));
-                const dataStr = JSON.stringify(selected, null, 2);
-                const blob = new Blob([dataStr], { type: "application/json" });
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = `mtg_export_selected_${new Date().toISOString().split('T')[0]}.json`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
             };
 
             return (
@@ -714,7 +689,7 @@
                                         <div className="mt-3 pt-3 border-t border-slate-100 text-xs leading-relaxed text-slate-600 space-y-2 animate-fade-in">
                                             <div className="flex gap-2"><span className="font-bold text-blue-600 whitespace-nowrap">Step 1</span><p>「Start New Deck」からデッキを選択または新規作成し、イベントの記録を開始します。</p></div>
                                             <div className="flex gap-2"><span className="font-bold text-blue-600 whitespace-nowrap">Step 2</span><p>イベント名や詳細を入力。デッキリストを貼り付けると、画像のプレビューや前回リストとの差分が自動計算されます。</p></div>
-                                            <div className="flex gap-2"><span className="font-bold text-blue-600 whitespace-nowrap">Step 3</span><p>保存すると履歴に追加されます。複数選択でJSON形式での一括エクスポートが可能です。</p></div>
+                                            <div className="flex gap-2"><span className="font-bold text-blue-600 whitespace-nowrap">Step 3</span><p>保存すると履歴に追加されます。</p></div>
                                         </div>
                                     )}
                                 </div>
@@ -814,11 +789,14 @@
                                         </div>
                                         <div className="w-2/3">
                                             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Location</label>
-                                            <input type="text" className="w-full bg-white border rounded p-2 text-sm" placeholder="場所..."
+                                            <input type="text" list="location-options" className="w-full bg-white border rounded p-2 text-sm" placeholder="場所..."
                                                 value={formData.location} onChange={(e) => setFormData({...formData, location: e.target.value})} />
+                                            {/* ロケーションの候補リスト */}
+                                            <datalist id="location-options">
+                                                {uniqueLocations.map(loc => <option key={loc} value={loc} />)}
+                                            </datalist>
                                         </div>
                                     </div>
-                                    {/* 新規項目: Event Name & Numbering */}
                                     <div className="flex gap-2">
                                         <div className="w-3/4">
                                             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Event Name</label>
@@ -966,6 +944,22 @@ Deck
                                             </div>
                                         </div>
 
+                                        {/* イベント名フィルター (新規) */}
+                                        <div className="relative group">
+                                            <select 
+                                                value={filterEventName} 
+                                                onChange={(e) => setFilterEventName(e.target.value)} 
+                                                className="appearance-none bg-white border border-slate-300 text-xs font-bold text-slate-600 py-1.5 pl-3 pr-8 rounded-full shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 hover:border-blue-400 transition cursor-pointer"
+                                                style={{maxWidth: '140px'}}
+                                            >
+                                                <option value="All">All Events</option>
+                                                {uniqueEventNames.map(n => <option key={n} value={n}>{n}</option>)}
+                                            </select>
+                                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
+                                                <Icon name="filter" size={10} />
+                                            </div>
+                                        </div>
+
                                         {/* ソート */}
                                         <div className="relative group">
                                             <select 
@@ -981,15 +975,6 @@ Deck
                                                 <Icon name="chevron-down" size={12} />
                                             </div>
                                         </div>
-
-                                        {isSelectionMode && selectedRecordIds.length > 0 && (
-                                            <button onClick={handleMultiJsonExport} className="text-xs bg-slate-800 text-white px-3 py-1.5 rounded-full font-bold shadow hover:bg-slate-700 transition animate-fade-in flex items-center gap-1">
-                                                <Icon name="download" size={12}/> Export JSON ({selectedRecordIds.length})
-                                            </button>
-                                        )}
-                                        <button onClick={toggleSelectionMode} className={`text-xs px-3 py-1.5 rounded-full font-bold transition flex items-center gap-1 ${isSelectionMode ? 'bg-blue-100 text-blue-700 border border-blue-200' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'}`}>
-                                            <Icon name={isSelectionMode ? "check-square" : "square"} size={12}/> {isSelectionMode ? "選択終了" : "複数選択"}
-                                        </button>
                                     </div>
                                 </div>
 
@@ -999,9 +984,6 @@ Deck
                                         key={record.id} 
                                         record={record} 
                                         onEdit={() => startEditEvent(record)}
-                                        isSelectionMode={isSelectionMode}
-                                        isSelected={selectedRecordIds.includes(record.id)}
-                                        onSelect={(e) => toggleRecordSelection(e, record.id)}
                                     />
                                 ))}
                             </div>
@@ -1015,12 +997,24 @@ Deck
                                 onSave={handleRenameSave}
                             />
                         )}
+
+                        {/* Delete Confirm Modal (新規追加) */}
+                        {deletingDeckId && (
+                            <ConfirmModal
+                                title="デッキの削除"
+                                message={`デッキ「${decks[deletingDeckId]?.name}」をデッキリストから削除しますか？\n(過去の対戦履歴は保持されます)`}
+                                confirmText="削除する"
+                                confirmColor="bg-red-600 hover:bg-red-700"
+                                onClose={() => setDeletingDeckId(null)}
+                                onConfirm={handleConfirmDeleteDeck}
+                            />
+                        )}
                     </main>
                 </div>
             );
         };
 
-        const EventCard = ({ record, onEdit, isSelectionMode, isSelected, onSelect }) => { 
+        const EventCard = ({ record, onEdit }) => { 
             const [expanded, setExpanded] = useState(false);
             const [showDeckImages, setShowDeckImages] = useState(false);
             const [imagesData, setImagesData] = useState({ main: [], side: [] });
@@ -1047,17 +1041,9 @@ Deck
             };
 
             return (
-                <div className={`bg-white rounded-xl shadow-sm border overflow-hidden hover:shadow-md transition relative ${isSelected ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200'}`}>
-                    <div className="p-3 sm:p-4 cursor-pointer bg-gradient-to-r from-white to-slate-50 hover:bg-slate-50 transition" onClick={(e) => { if(isSelectionMode) onSelect(e); else setExpanded(!expanded); }}>
+                <div className="bg-white rounded-xl shadow-sm border overflow-hidden hover:shadow-md transition relative border-slate-200">
+                    <div className="p-3 sm:p-4 cursor-pointer bg-gradient-to-r from-white to-slate-50 hover:bg-slate-50 transition" onClick={() => setExpanded(!expanded)}>
                         <div className="flex gap-3">
-                            {isSelectionMode && (
-                                <div className="flex items-center justify-center shrink-0 pt-1">
-                                    <div className={`w-5 h-5 rounded border flex items-center justify-center transition ${isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-slate-300 text-transparent'}`}>
-                                        <Icon name="check" size={14} />
-                                    </div>
-                                </div>
-                            )}
-                            
                             <div className="flex-1 min-w-0">
                                 {/* Top Row: Meta Tags & Edit Button */}
                                 <div className="flex justify-between items-start mb-1">
@@ -1069,15 +1055,13 @@ Deck
                                         {record.location && <span className="flex items-center gap-1 bg-white border px-1.5 rounded"><Icon name="map-pin" size={12}/> {record.location}</span>}
                                     </div>
                                     
-                                    {!isSelectionMode && (
-                                        <button 
-                                            onClick={(e) => { e.stopPropagation(); onEdit(); }}
-                                            className="text-slate-400 hover:text-blue-500 transition p-1 rounded-full hover:bg-blue-50 border border-transparent hover:border-blue-100 shrink-0 -mt-1 -mr-1"
-                                            title="Edit Record"
-                                        >
-                                            <Icon name="pencil" size={14} />
-                                        </button>
-                                    )}
+                                    <button 
+                                        onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                                        className="text-slate-400 hover:text-blue-500 transition p-1 rounded-full hover:bg-blue-50 border border-transparent hover:border-blue-100 shrink-0 -mt-1 -mr-1"
+                                        title="Edit Record"
+                                    >
+                                        <Icon name="pencil" size={14} />
+                                    </button>
                                 </div>
 
                                 {/* Bottom Row: Deck Name & Score */}
@@ -1100,7 +1084,7 @@ Deck
                         </div>
                     </div>
 
-                    {expanded && !isSelectionMode && (
+                    {expanded && (
                         <div className="border-t border-slate-100 animate-fade-in">
                             <div className="bg-slate-50/50 p-2 space-y-2">
                                 {record.matches.map((match) => (
